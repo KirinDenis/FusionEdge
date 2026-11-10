@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FusionEdge Flasher</title>
+<meta name="description" content="Flash the FusionEdge internet radio firmware onto an ESP32-S3 board from the browser. Built by GitHub Actions from the FusionEdge repository.">
+<!-- ESP Web Tools: the flash buttons. inside it esptool-js talks to the chip's own boot ROM over Web Serial -->
+<script type="module" src="https://unpkg.com/esp-web-tools@10.2.1/dist/web/install-button.js?module"></script>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1b1f24; --dim: #5a6472; --line: #d8dde3;
+    --accent: #0a66c2; --on-accent: #ffffff; --warn: #9a5b00; --bad: #c62828; --code: #eef1f4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1419; --card: #171d24; --ink: #e6edf3; --dim: #9aa6b2; --line: #2d3742;
+      --accent: #4fa3ff; --on-accent: #0f1419; --warn: #e3a341; --bad: #ff7b72; --code: #0a0e12;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { margin: 0 0 6px; font-size: 30px; }
+  h2 { margin: 0 0 10px; font-size: 20px; }
+  h3 { margin: 0; font-size: 18px; }
+  p { margin: 0 0 10px; }
+  a { color: var(--accent); }
+  .dim { color: var(--dim); }
+  section { margin-top: 18px; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+  ul, ol { margin: 8px 0 0; padding-left: 22px; }
+  li { margin: 4px 0; }
+  code, pre { font: 14px Consolas, "Cascadia Mono", monospace; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-top: 14px; }
+  .card { display: flex; flex-direction: column; gap: 8px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+  .card .spec { font-size: 15px; color: var(--dim); }
+  .card .tag { font-size: 14px; color: var(--warn); }
+  .card .flash:first-of-type { margin-top: auto; }
+  .flash button {
+    width: 100%; padding: 11px 14px; border: 1px solid var(--accent); border-radius: 8px; cursor: pointer;
+    font: 700 15px system-ui, sans-serif; letter-spacing: .5px; color: var(--on-accent); background: var(--accent);
+  }
+  .flash.quiet button { color: var(--accent); background: transparent; }
+  .nope { color: var(--bad); font-size: 15px; }
+  .files { font-size: 14px; }
+  .files summary { cursor: pointer; color: var(--accent); }
+  .files pre { margin: 8px 0 0; padding: 8px 10px; overflow-x: auto; border-radius: 8px; background: var(--code); white-space: pre; }
+  .files ul { padding-left: 18px; }
+  .gone { font-size: 15px; color: var(--dim); }
+  footer { margin-top: 24px; font-size: 14px; color: var(--dim); }
+  [hidden] { display: none !important; }      /* or a display rule of the same element wins over it */
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>FusionEdge Flasher</h1>
+  <p class="dim">Put the <a href="https://github.com/@REPO@">FusionEdge</a> internet radio firmware on your board
+     from this page: pick your hardware, press the button, pick the board's port. Each build is made by GitHub
+     Actions from the project's own files for that board, on every push.</p>
+  <p class="dim">It needs <b>Chrome or Edge on a computer</b>: they have Web Serial, the way for a page to reach
+     a USB port. Phones, Firefox and Safari don't.</p>
+
+  <section>
+    <h2>1. Pick your hardware</h2>
+    <div class="row">
+      <span>Firmware <b id="version">@VERSION@</b></span>
+      <label id="picker" hidden>Version
+        <select id="versions"></select>
+      </label>
+    </div>
+    <p class="dim" style="margin-top:8px">New: these builds have not been run on a board here yet. The pins are
+       the ones in the board's <code>myoptions.h</code>, linked on each card: check them against your wiring.</p>
+
+    <div class="grid">
+      <article class="card" data-board="s3-ili9488" data-chip="esp32s3">
+        <h3>ESP32-S3 DevKitC-1 N16R8 with a 3.5" ILI9488</h3>
+        <div class="spec">The project's main build. A 480x320 ILI9488 SPI display with FT6X36 capacitive touch,
+          a PCM5102A DAC, one encoder, an SD card, an IR receiver and the QCC5124EL Bluetooth module.
+          Pins: <a href="https://github.com/@REPO@/blob/HEAD/myoptions.h">myoptions.h</a>.</div>
+      </article>
+
+      <article class="card" data-board="jc3248w535" data-chip="esp32s3">
+        <h3>Guition JC3248W535</h3>
+        <div class="spec">ESP32-S3 N16R8 with its own 3.5" 480x320 AXS15231B QSPI display and touch. A PCM5102A
+          DAC, one encoder and an SD card. Pins:
+          <a href="https://github.com/@REPO@/blob/HEAD/AXS15231B_options/myoptions.h">AXS15231B_options/myoptions.h</a>.</div>
+      </article>
+
+      <article class="card" data-board="gen4-35ct" data-chip="esp32s3">
+        <h3>4D Systems gen4-ESP32-35CT</h3>
+        <div class="spec">ESP32-S3 N16R8 with its own 3.5" ILI9488 display, FocalTech capacitive touch and
+          microSD. The I2S DAC on GPIO 38, 39 and 40. Bluetooth, IR and encoders are off. Pins:
+          <a href="https://github.com/@REPO@/blob/HEAD/gen4-ESP32-35CT_options/myoptions.h">gen4-ESP32-35CT_options/myoptions.h</a>.</div>
+      </article>
+
+      <article class="card" data-board="wrover-n16r8" data-chip="esp32">
+        <h3>ESP32-WROVER-E N16R8</h3>
+        <div class="spec">The classic ESP32, not the S3. An ILI9488 SPI display, an I2S DAC and two encoders.
+          Touch, SD, Bluetooth, DLNA and album covers are off. Pins:
+          <a href="https://github.com/@REPO@/blob/HEAD/esp32-wrover-n16r8/myoptions.h">esp32-wrover-n16r8/myoptions.h</a>.</div>
+        <div class="tag">Experimental, as the project says in
+          <a href="https://github.com/@REPO@/blob/HEAD/esp32-wrover-n16r8/README.md">its notes</a>: the web
+          page can be slow while it plays, and HTTPS streams may fail.</div>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <h2>2. Before you press</h2>
+    <ul>
+      <li><b>INSTALL EVERYTHING</b> writes the firmware and the radio's files: its web pages, fonts, pictures,
+          the station list and the WiFi list. Use it on a new board, and for a new version. It takes several
+          minutes: about 6 MB go over the cable.</li>
+      <li>It then asks whether to erase. <b>Yes</b> on a new board or one that had other firmware on it.
+          <b>No</b> for an update: the radio's settings stay. The station list and the WiFi list still go back
+          to the ones it came with, so export them from the radio's web page first and import them after.</li>
+      <li><b>UPDATE FIRMWARE ONLY</b> leaves all the radio's files as they are, no to erase. The web pages then
+          stay at their old version too, and the project asks for the matching files with a new version: when
+          in doubt, INSTALL EVERYTHING.</li>
+      <li>No port in the list? The cable may only charge, or the USB chip's driver is missing (CH340, CP210x).</li>
+      <li>It won't connect? Hold <b>BOOT</b>, press and let go of <b>RST</b>, let go of BOOT, then press the
+          button here again.</li>
+      <li>Close the flasher's window when it is done: one port, one program at a time.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>3. After it starts</h2>
+    <ul>
+      <li>With no WiFi known the radio opens its own network, <b>FusionEdge_AP</b>, password <b>12345987</b>.
+          Join it, open <code>http://192.168.4.1</code> and give the radio your WiFi.</li>
+      <li>The radio speaks Hungarian: these builds keep <code>LANGUAGE HU</code> from the project's
+          <code>myoptions.h</code>. For another language, build it yourself as the
+          <a href="https://github.com/@REPO@#build">README</a> says.</li>
+      <li>Later updates of the firmware alone can also go in through the radio's own web page, Update, with
+          the <b>firmware.bin</b> from your board's card, under Files for esptool and other tools.</li>
+    </ul>
+  </section>
+
+  <footer>
+    Firmware @VERSION@. FusionEdge is GPL-3.0 licensed, on <a href="https://github.com/@REPO@">GitHub</a>.
+    Flashing: <a href="https://esphome.github.io/esp-web-tools/">ESP Web Tools</a>.
+  </footer>
+</div>
+
+<template id="tools">
+  <esp-web-install-button class="flash" data-kind="all">
+    <button slot="activate">INSTALL EVERYTHING</button>
+    <span slot="unsupported" class="nope">This browser can't flash. Use Chrome or Edge on a computer.</span>
+    <span slot="not-allowed" class="nope">Flashing needs the page over https.</span>
+  </esp-web-install-button>
+  <esp-web-install-button class="flash quiet" data-kind="app">
+    <button slot="activate">UPDATE FIRMWARE ONLY</button>
+    <span slot="unsupported"></span>
+    <span slot="not-allowed"></span>
+  </esp-web-install-button>
+  <div class="gone" hidden>Not in this version.</div>
+  <details class="files">
+    <summary>Files for esptool and other tools</summary>
+    <ul class="list"></ul>
+    <pre class="line"></pre>
+    <p class="dim">The one-file image goes at 0x0 and covers the settings too: for a first install only.</p>
+  </details>
+</template>
+
+<script>
+// the cards get their buttons and files here, so a version picked below changes every card at once.
+// ESP Web Tools reads the manifest at the click, not at load, so a new attribute is all it takes
+const $ = (id) => document.getElementById(id);
+const cards = [...document.querySelectorAll('.card')];
+let dir = 'fw';                    // where the picked version's folders are: fw, or fw/<version>
+
+for (const card of cards) {
+  card.append($('tools').content.cloneNode(true));
+  card.querySelector('details').addEventListener('toggle', (e) => {
+    if (e.target.open) {
+      listFiles(card).catch((x) => {
+        card.querySelector('.line').textContent = 'Could not read the files: ' + x.message;
+      });
+    }
+  });
+}
+
+// flash_args says what goes where: the same file the manifests are made from
+async function listFiles(card) {
+  const board = card.dataset.board;
+  const base = `${dir}/${board}/`;
+  const answer = await fetch(base + 'flash_args');
+  if (!answer.ok) {
+    throw new Error(`the site answered ${answer.status}`);
+  }
+  const parts = [];
+  for (const line of (await answer.text()).split('\n')) {
+    const [addr, file] = line.trim().split(/\s+/);
+    if (addr && file && !addr.startsWith('--')) {
+      parts.push({ addr, file });
+    }
+  }
+  const list = card.querySelector('.list');
+  list.replaceChildren();
+  const all = [...parts, { addr: '', file: `fusionedge-${board}.zip` }];
+  for (const p of all) {
+    const li = document.createElement('li');
+    const a = document.createElement('a');
+    a.href = base + p.file;
+    a.textContent = p.file;
+    li.append(p.addr ? `${p.addr} ` : 'one-file image, zipped: ', a);
+    list.append(li);
+  }
+  card.querySelector('.line').textContent = `esptool --chip ${card.dataset.chip} -b 460800 write-flash ` +
+    parts.map((p) => `${p.addr} ${p.file}`).join(' ');
+}
+
+function show(version) {
+  dir = version.dir;
+  for (const card of cards) {
+    const board = card.dataset.board;
+    const there = version.boards.includes(board);
+    for (const button of card.querySelectorAll('esp-web-install-button')) {
+      const name = button.dataset.kind === 'all' ? 'manifest.json' : 'manifest-app.json';
+      button.setAttribute('manifest', `${dir}/${board}/${name}`);
+      button.hidden = !there;
+    }
+    card.querySelector('.gone').hidden = there;
+    card.querySelector('.files').hidden = !there;
+    card.querySelector('.files').open = false;
+  }
+  $('version').textContent = version.text;
+}
+
+async function versions() {
+  const all = cards.map((c) => c.dataset.board);
+  show({ dir: 'fw', text: $('version').textContent, boards: all });     // before the list comes, or without it
+  const answer = await fetch('fw/versions.json', { cache: 'no-cache' });
+  if (!answer.ok) {
+    return;                         // a local copy without the archive: the newest only
+  }
+  const list = (await answer.json()).versions;
+  if (!list.length) {
+    return;
+  }
+  const pick = $('versions');
+  for (const v of list) {
+    const option = document.createElement('option');
+    option.value = v.version;
+    option.textContent = v.dir === 'fw' ? `${v.version} (newest)` : v.version;
+    pick.append(option);
+  }
+  const asked = new URLSearchParams(location.search).get('v');
+  const first = list.find((v) => v.version === asked) || list[0];
+  pick.value = first.version;
+  show(first);
+  $('picker').hidden = list.length < 2;
+  pick.addEventListener('change', () => {
+    const v = list.find((x) => x.version === pick.value);
+    show(v);
+    const url = new URL(location.href);
+    if (v.dir === 'fw') {
+      url.searchParams.delete('v');
+    } else {
+      url.searchParams.set('v', v.version);
+    }
+    history.replaceState(null, '', url);
+  });
+}
+
+versions().catch((e) => console.warn('versions:', e));
+</script>
+</body>
+</html>

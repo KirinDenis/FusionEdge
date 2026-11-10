@@ -1,0 +1,146 @@
+# FusionEdge - build the firmware for every board the repository has a myoptions.h for, and put it on
+# GitHub Pages next to the page that flashes it from the browser (ESP Web Tools, Chrome or Edge).
+#
+# One job a board: its myoptions.h (and platformio.ini, when its folder has one) is copied over the
+# root one in that job's checkout only, as the board's README says to do by hand. Then one job puts
+# the page, these binaries and the older versions the site keeps (.github/archive.sh) together and
+# publishes them. Nothing in the source tree is changed.
+#
+# Needs once: Settings -> Pages -> Source: "GitHub Actions".
+
+name: Firmware and flasher site
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+# each job asks for what it needs on top of this
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  firmware:
+    name: Firmware ${{ matrix.board }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { board: s3-ili9488,   options: "",                      chip: esp32s3 }
+          - { board: jc3248w535,   options: AXS15231B_options,       chip: esp32s3 }
+          - { board: gen4-35ct,    options: gen4-ESP32-35CT_options, chip: esp32s3 }
+          - { board: wrover-n16r8, options: esp32-wrover-n16r8,      chip: esp32 }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # the platform, the Arduino core and the toolchain are about a gigabyte: kept between runs
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ matrix.chip }}-${{ hashFiles('platformio.ini', '*/platformio.ini') }}
+
+      - name: Install PlatformIO
+        run: pip install platformio==6.1.18
+
+      - name: Build
+        env:
+          OPTIONS: ${{ matrix.options }}
+        run: |
+          if [ -n "$OPTIONS" ]; then
+            cp "$OPTIONS/myoptions.h" myoptions.h
+            if [ -f "$OPTIONS/platformio.ini" ]; then
+              cp "$OPTIONS/platformio.ini" platformio.ini
+            fi
+          fi
+          ENV=$(sed -n 's/^\[env:\(.*\)\]/\1/p' platformio.ini | head -n 1)
+          echo "ENV=$ENV" >> "$GITHUB_ENV"
+          pio run -e "$ENV"
+          pio run -e "$ENV" -t buildfs
+          pio project metadata -e "$ENV" --json-output --json-output-path meta.json
+
+      - name: Collect the binaries
+        # the addresses come from the build (meta.json) and the partition table, never typed. esptool
+        # is the platform's own, the one PlatformIO flashes with, in the environment the build made
+        run: |
+          export PATH="$HOME/.platformio/penv/bin:$PATH"
+          bash .github/collect.sh "${{ matrix.board }}" "${{ matrix.chip }}" "$ENV" out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fw-${{ matrix.board }}
+          path: out
+
+      # not for the site: the ELF turns a crash backtrace from a board flashed off the site into
+      # file and line. a locally built ELF doesn't match
+      - uses: actions/upload-artifact@v4
+        with:
+          name: elf-${{ matrix.board }}
+          path: .pio/build/${{ env.ENV }}/firmware.elf
+          retention-days: 90
+
+  # goes on when a board did not build (the others are published as before), not in a run a newer
+  # push cancelled. the older versions come from the site as it is: a version it has and this run
+  # can't fetch, or a lower number than one it has, stops here and the site stays as it was.
+  # a version's firmware is replaced by each build of it: to keep a build, give the next one a new
+  # FW_VERSION in src/core/options.h
+  site:
+    name: Flasher site
+    needs: firmware
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # for the build number
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fw-*
+          path: public/fw
+          merge-multiple: true
+
+      - id: pages               # base_url: where the site is now, the older versions come from it
+        uses: actions/configure-pages@v5
+
+      - name: Put the page together
+        # the version is FW_VERSION in src/core/options.h, the one the firmware shows
+        env:
+          SITE: ${{ steps.pages.outputs.base_url }}
+        run: |
+          VER=$(sed -n 's/^#define FW_VERSION "\([0-9][0-9.]*\)".*/\1/p' src/core/options.h | head -n 1)
+          [ -n "$VER" ] || { echo "no FW_VERSION in src/core/options.h" >&2; exit 1; }
+          VERSION="$VER, build $(git rev-list --count HEAD) ($(git rev-parse --short HEAD))"
+          cp -r site/. public/
+          bash .github/make-manifests.sh public/fw "$VERSION"
+          bash .github/archive.sh public/fw "$VER" "$VERSION" "$SITE"
+          sed -i "s|@VERSION@|$VERSION|g; s|@REPO@|$GITHUB_REPOSITORY|g" public/index.html
+          find public -type f | sort
+
+      # a second copy of every version, should the site ever lose them: each run's for 90 days
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site-fw
+          path: public/fw
+          retention-days: 90
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+      - id: deploy
+        uses: actions/deploy-pages@v4
