@@ -449,7 +449,10 @@ void ClockWidget::_printClock(bool redraw) {
 
         // Dátum rajzolása a canvas-ba - fix pozíció alul
         if (_ssDate[0] != '\0') {
-            const uint16_t dateY = 271;  // top=265 + vlw_22 félmagasság (~11px)
+#ifndef CLOCK_SS_DATE_Y
+#define CLOCK_SS_DATE_Y 271   // 480x320; a smaller screen's conf sets its own
+#endif
+            const uint16_t dateY = CLOCK_SS_DATE_Y;  // top=265 + vlw_22 félmagasság (~11px)
             canvas.setTextDatum(MC_DATUM);
             canvas.setTextColor(config.theme.date, config.theme.background);
             if (font_vlw_22) {

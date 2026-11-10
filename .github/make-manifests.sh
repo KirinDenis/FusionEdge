@@ -15,6 +15,7 @@ for dir in "$FW"/*/; do
     jc3248w535)   name='Guition JC3248W535 (AXS15231B)';               family='ESP32-S3' ;;
     gen4-35ct)    name='4D Systems gen4-ESP32-35CT';                    family='ESP32-S3' ;;
     wrover-n16r8) name='ESP32-WROVER-E N16R8 (experimental)';           family='ESP32' ;;
+    crowadv28)    name='Elecrow CrowPanel Advance 2.8" (new)';          family='ESP32-S3' ;;
     *) echo "skipping unknown folder $board"; continue ;;
   esac
   all=""

@@ -373,7 +373,7 @@ void PlayListWidget::_renderStaticList(uint16_t centerIdx) {
         int colorIdx = i;
         if (colorIdx >= 5) colorIdx = 4; // Max szín index
         dsp.setTextColor(config.theme.playlist[colorIdx], config.theme.background);
-        if (y > 0) dsp.drawString(_getCachedName(idx), 10, y);
+        if (y > 0) dsp.drawString(_getCachedName(idx), TFT_FRAMEWDT, y);
     }
 
     // Alsó sorok rajzolása a CACHE-ből
@@ -383,7 +383,7 @@ void PlayListWidget::_renderStaticList(uint16_t centerIdx) {
         int colorIdx = i;
         if (colorIdx >= 5) colorIdx = 4; // Max szín index
         dsp.setTextColor(config.theme.playlist[colorIdx], config.theme.background);
-        if (y > 0 && y < (int)(_areaTop + _areaHeight)) dsp.drawString(_getCachedName(idx), 10, y);
+        if (y > 0 && y < (int)(_areaTop + _areaHeight)) dsp.drawString(_getCachedName(idx), TFT_FRAMEWDT, y);
     }
 
     dsp.unloadFont();

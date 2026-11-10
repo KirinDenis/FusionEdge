@@ -57,9 +57,18 @@
 #    define SW_META_T      50
 #    define SW_META_B     135
 
+// The overlay band, the same as display.cpp's: the 480x320 values, a smaller screen's conf sets its own
+#    ifndef VOL_AREA_TOP
+#        define VOL_AREA_TOP    137
+#        define VOL_AREA_HEIGHT 149
+#    endif
+// A swipe that starts above this line is not a swipe
+#    ifndef TS_SWIPE_TOP
+#        define TS_SWIPE_TOP     50
+#    endif
+
 // VOL/Playlist swipe zóna – a VOL_AREA_TOP-tól lefelé
-// (VOL_AREA_TOP = 137, def. display.cpp-ben)
-#    define SW_VOL_T      137
+#    define SW_VOL_T      VOL_AREA_TOP
 
 void TouchScreen::init(uint16_t w, uint16_t h) {
     // A LovyanGFX a dsp.init() során már inicializálta a touch IC-t a buszon.
@@ -280,9 +289,10 @@ void TouchScreen::loop() {
     static int      presetHoldSlot = -1;
     static int      favHold = -1;
     static bool     favLongTriggered = false;
+#    endif
+    // used on every screen size, not only 480x320
     static uint32_t lastTouchMs = 0;
     static bool     specLongTriggered = false;  // spectrum long-press már kisült?
-#    endif
     static bool lastStTouched = false;
 
     if (!_checklpdelay(20, _touchdelay)) { return; }
@@ -365,7 +375,7 @@ void TouchScreen::loop() {
                 direct = TDS_REQUEST;
             } else {
                 // KRITIKUS: Csak akkor nézzük a mozgást, ha a hardver MÉG ÉRZÉKELI az ujjad (istouched)
-                if (_oldTouchY >= 50 && istouched) {
+                if (_oldTouchY >= TS_SWIPE_TOP && istouched) {
 
                     int16_t distX = abs(touchX - _oldTouchX);
                     int16_t distY = abs(touchY - _oldTouchY);
@@ -376,8 +386,8 @@ void TouchScreen::loop() {
                         if (distX < 30 && distY < 30) {
                             // MODESELECT: azonnal kijelöli azt az elemet, ami az ujj alatt van
                             if (display.mode() == MODESELECT) {
-                                constexpr uint16_t MS_TOP  = 137;
-                                constexpr uint16_t MS_H    = 149;
+                                constexpr uint16_t MS_TOP  = VOL_AREA_TOP;
+                                constexpr uint16_t MS_H    = VOL_AREA_HEIGHT;
                                 constexpr uint16_t LIST_OFF = 35;
                                 uint8_t cnt = display.msModeCount();
                                 if (cnt > 0 && touchY >= (MS_TOP + LIST_OFF) && touchY < (MS_TOP + MS_H)) {
@@ -396,7 +406,7 @@ void TouchScreen::loop() {
                         case TSD_RIGHT: {
                             // EQ overlay drag
                             if (display.mode() == PLAYER && display.isEqOpen() &&
-                                touchY >= 137 && touchY < 287) {
+                                touchY >= VOL_AREA_TOP && touchY < VOL_AREA_TOP + VOL_AREA_HEIGHT + 1) {
                                 display_eq_touch(touchX, touchY, true);
                                 break;
                             }
@@ -497,9 +507,9 @@ void TouchScreen::loop() {
 
                 // ── MODESELECT: minden touch event IDE fut, más handler nem kapja meg ──
                 if (display.mode() == MODESELECT) {
-                    // VOL_AREA: y=137..286 (VOL_AREA_TOP=137, VOL_AREA_HEIGHT=149, defined in display.cpp)
-                    constexpr uint16_t MS_AREA_TOP = 137;
-                    constexpr uint16_t MS_AREA_H   = 149;
+                    // VOL_AREA: y=137..286 on 480x320 (VOL_AREA_TOP, VOL_AREA_HEIGHT)
+                    constexpr uint16_t MS_AREA_TOP = VOL_AREA_TOP;
+                    constexpr uint16_t MS_AREA_H   = VOL_AREA_HEIGHT;
                     if (_oldTouchY >= MS_AREA_TOP && _oldTouchY < (MS_AREA_TOP + MS_AREA_H)) {
                         uint16_t listTop = MS_AREA_TOP + 35;
                         uint8_t  cnt     = display.msModeCount();

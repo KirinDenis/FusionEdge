@@ -104,6 +104,16 @@
           <a href="https://github.com/@REPO@/blob/HEAD/esp32-wrover-n16r8/README.md">its notes</a>: the web
           page can be slow while it plays, and HTTPS streams may fail.</div>
       </article>
+
+      <article class="card" data-board="crowadv28" data-chip="esp32s3">
+        <h3>Elecrow CrowPanel Advance 2.8"</h3>
+        <div class="spec">ESP32-S3 N16R8 with its own 2.8" 320x240 ST7789 IPS display, FT6336U capacitive touch,
+          microSD and a speaker on its NS4168 amplifier: nothing to wire. Not the plain CrowPanel 2.8", which is a
+          classic ESP32. In English. Pins:
+          <a href="https://github.com/@REPO@/blob/HEAD/CrowPanel-Advance-2.8_options/myoptions.h">CrowPanel-Advance-2.8_options/myoptions.h</a>.</div>
+        <div class="tag">New: a 320x240 layout, not run on a board yet. If a tap lands on the wrong side, switch the
+          touch mirroring on the radio's web page.</div>
+      </article>
     </div>
   </section>
 
@@ -131,8 +141,8 @@
     <ul>
       <li>With no WiFi known the radio opens its own network, <b>FusionEdge_AP</b>, password <b>12345987</b>.
           Join it, open <code>http://192.168.4.1</code> and give the radio your WiFi.</li>
-      <li>The radio speaks Hungarian: these builds keep <code>LANGUAGE HU</code> from the project's
-          <code>myoptions.h</code>. For another language, build it yourself as the
+      <li>The radio speaks the language its <code>myoptions.h</code> sets: Hungarian on most boards, English on
+          the CrowPanel. For another language, build it yourself as the
           <a href="https://github.com/@REPO@#build">README</a> says.</li>
       <li>Later updates of the firmware alone can also go in through the radio's own web page, Update, with
           the <b>firmware.bin</b> from your board's card, under Files for esptool and other tools.</li>

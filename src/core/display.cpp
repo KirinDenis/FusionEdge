@@ -32,10 +32,39 @@
 #endif
 
 // Inline overlay sáv koordináták (elválasztóvonal alatt, wifi/vol widget felett)
+// Screen geometry below: the 480x320 values. A smaller screen's conf file (conf_320x240.h) sets its own.
+#ifndef VOL_AREA_TOP
 #define VOL_AREA_TOP    137
 #define VOL_AREA_HEIGHT 149   // 286 - 137
 #define VOL_AREA_LEFT     0
 #define VOL_AREA_WIDTH  480
+#endif
+#ifndef SPECTRUM_TOP
+#define SPECTRUM_TOP     157   // the spectrum, left of the clock
+#define SPECTRUM_RIGHT   280   // where the clock starts
+#define SPECTRUM_HEIGHT  106
+#define SPECTRUM_BANDS    14
+#endif
+#ifndef STATION_ICON_TOP
+#define STATION_ICON_TOP  15
+#endif
+#ifndef CLOCK_SS_ZOOM
+#define CLOCK_SS_ZOOM   2.0f   // the clock on the screensaver
+#endif
+#ifndef VOL_OVL_TITLE_Y        // the volume overlay, inside the band
+#define VOL_OVL_TITLE_Y   14
+#define VOL_OVL_NUM_Y     75
+#define VOL_OVL_SPK_Y     30
+#define VOL_OVL_SPK_X     15
+#define VOL_OVL_SEG_W     14
+#define VOL_OVL_SEG_GAP    5
+#define VOL_OVL_SEG_H     14
+#define VOL_OVL_BAR_UP    28   // the bar's top, up from the band's bottom
+#endif
+#ifndef SD_OVL_TITLE_Y         // the SD indexing overlay, inside the band
+#define SD_OVL_TITLE_Y    20
+#define SD_OVL_COUNT_Y    90
+#endif
 #include "serial_littlefs.h"
 #include "touchscreen.h"
 // #define LGFX_USE_PNG
@@ -359,13 +388,13 @@ void Display::_buildPager() {
     // Pozíció: left=TFT_FRAMEWDT, top=145, height=120px
     // Szélesség: az óra bal széléig (clockConf.left - TFT_FRAMEWDT - 4)
     {
-        static const WidgetConfig cc = { 280, 162, 70, WA_RIGHT }; // == clockConf
+        static const WidgetConfig cc = { SPECTRUM_RIGHT, 162, 70, WA_RIGHT }; // == clockConf
         SpectrumConfig sc;
         sc.left      = TFT_FRAMEWDT;
-        sc.top       = 157;
+        sc.top       = SPECTRUM_TOP;
         sc.width     = cc.left - TFT_FRAMEWDT - 4;  // óra bal széléig, 4px margóval
-        sc.height    = 106;
-        sc.bands     = 14;
+        sc.height    = SPECTRUM_HEIGHT;
+        sc.bands     = SPECTRUM_BANDS;
         sc.barGap    = 3;
         sc.ledGap    = 3;
         sc.barHeight = 4;
@@ -441,28 +470,34 @@ void Display::_buildPager() {
     dateWidgetConf.widget.textsize = _dc.textsize;
     dateWidgetConf.widget.align    = _dc.align;
     // ── Status widget ────────────────────────────────────────────────────
+#    ifndef HIDE_STATUS_WIDGET     // a smaller screen has no room for it
     WidgetConfig _stc = { 127, 105, 16, WA_LEFT }; // == statusWidgetConf
     _statuswidget = new StatusWidget();
     _statuswidget->init(_stc, config.theme.background);
     _statuswidget->setActive(true, false);
     pages[PG_PLAYER]->addWidget(_statuswidget);
+#    endif
 
     // ── EQ widget ─────────────────────────────────────────────────────────
+#    ifndef HIDE_EQ_WIDGET         // without it the EQ overlay does not open either
     WidgetConfig _eqc = { 301, 105, 16, WA_LEFT };
     _eqwidget = new EqWidget();
     _eqwidget->init(_eqc, config.theme.background);
     _eqwidget->setActive(true, false);
     pages[PG_PLAYER]->addWidget(_eqwidget);
+#    endif
 
     // ── Icon widgetek ──────────────────────────────────────────────────────
+#    ifndef HIDE_WEATHER_ICON
     WidgetConfig _wic = { (uint16_t)(DSP_WIDTH-TFT_FRAMEWDT-81), 205, 18, WA_RIGHT }; // == weatherIconConf
     _weatherIcon = new WeatherIconWidget();
     _weatherIcon->init(_wic, config.theme.background);
     _weatherIcon->lock(!config.store.showweather);
     _weatherIcon->setActive(true, false);
     pages[PG_PLAYER]->addWidget(_weatherIcon);
+#    endif
 
-    WidgetConfig _sic = { TFT_FRAMEWDT, 15, 0, WA_LEFT }; // == stationIconConf
+    WidgetConfig _sic = { TFT_FRAMEWDT, STATION_ICON_TOP, 0, WA_LEFT }; // == stationIconConf
     _stationIcon = new StationIconWidget();
     _stationIcon->init(_sic, config.theme.background);
     _stationIcon->setActive(true, false);
@@ -724,7 +759,7 @@ void Display::_swichMode(displayMode_e newmode) {
         if (_cassettewidget) { _cassettewidget->lock(!showCassette); }
         if (_clock) {
             if (newmode == SCREENSAVER && !showCassette) {
-                _clock->setZoom(2.0f);
+                _clock->setZoom(CLOCK_SS_ZOOM);
                 _clock->unlock();
             } else {
                 _clock->lock(true);
@@ -737,7 +772,7 @@ void Display::_swichMode(displayMode_e newmode) {
         if (_coverScreensaverWidget) { _coverScreensaverWidget->lock(!showCover); }
         if (_clock) {
             if (newmode == SCREENSAVER && !showCover) {
-                _clock->setZoom(2.0f);
+                _clock->setZoom(CLOCK_SS_ZOOM);
                 _clock->unlock();
             } else {
                 _clock->lock(true);
@@ -753,7 +788,7 @@ void Display::_swichMode(displayMode_e newmode) {
         }
 #    else
         _clockScreensaverBrightnessActive = newmode == SCREENSAVER;
-        if (newmode == SCREENSAVER) { _clock->setZoom(2.0f); }
+        if (newmode == SCREENSAVER) { _clock->setZoom(CLOCK_SS_ZOOM); }
 #    endif
         _pager->setPage(pages[PG_SCREENSAVER]);
         if (newmode == SCREENBLANK) {
@@ -1232,7 +1267,7 @@ void Display::loop() {
                     if (_mode == SCREENSAVER && _coverScreensaverWidget) {
                         _coverScreensaverWidget->lock(true);
                         _clockScreensaverBrightnessActive = true;
-                        _clock->setZoom(2.0f);
+                        _clock->setZoom(CLOCK_SS_ZOOM);
                         _clock->lock(false);
                         setBrightnessPercent(effectiveBrightnessPercent(config.store.brightness));
                     }
@@ -1573,11 +1608,11 @@ void Display::_volInlineDraw() {
     if (font_vlw_20) {
         canvas.loadFont(font_vlw_20);
         canvas.setTextSize(1);
-        canvas.drawString("VOLUME", VOL_AREA_WIDTH / 2, 14);
+        canvas.drawString("VOLUME", VOL_AREA_WIDTH / 2, VOL_OVL_TITLE_Y);
         canvas.unloadFont();
     } else {
         canvas.setTextSize(2);
-        canvas.drawString("VOLUME", VOL_AREA_WIDTH / 2, 14);
+        canvas.drawString("VOLUME", VOL_AREA_WIDTH / 2, VOL_OVL_TITLE_Y);
     }
 
     // --- Nagy szám - clock font ---
@@ -1588,19 +1623,19 @@ void Display::_volInlineDraw() {
         canvas.loadFont(font_vlw_clock);
         canvas.setTextSize(1);
         canvas.setTextDatum(MC_DATUM);
-        canvas.drawString(buf, VOL_AREA_WIDTH / 2, 75);
+        canvas.drawString(buf, VOL_AREA_WIDTH / 2, VOL_OVL_NUM_Y);
         canvas.unloadFont();
     } else {
         canvas.setTextDatum(MC_DATUM);
         canvas.setTextSize(7);
-        canvas.drawString(buf, VOL_AREA_WIDTH / 2, 75);
+        canvas.drawString(buf, VOL_AREA_WIDTH / 2, VOL_OVL_NUM_Y);
     }
 
     // --- Hangszóró ikonok (bitmap maszk alapján) ---
-    const uint16_t SPK_Y     = 30;  // canvas-on belül
+    const uint16_t SPK_Y     = VOL_OVL_SPK_Y;  // canvas-on belül
     const uint16_t SPK_COLOR = config.theme.digit;
-    const uint16_t SPK_LEFT  = 15;
-    const uint16_t SPK_RIGHT = VOL_AREA_WIDTH - SPEAKER_W - 15;
+    const uint16_t SPK_LEFT  = VOL_OVL_SPK_X;
+    const uint16_t SPK_RIGHT = VOL_AREA_WIDTH - SPEAKER_W - VOL_OVL_SPK_X;
 
     for (uint16_t y = 0; y < SPEAKER_H; y++) {
         for (uint16_t x = 0; x < SPEAKER_W; x++) {
@@ -1614,11 +1649,11 @@ void Display::_volInlineDraw() {
 
     // --- Szegmens bar a sáv aljára ---
     const uint8_t  SEG_COUNT = 21;
-    const uint16_t SEG_GAP  = 5;
-    const uint16_t SEG_W    = 14;
+    const uint16_t SEG_GAP  = VOL_OVL_SEG_GAP;
+    const uint16_t SEG_W    = VOL_OVL_SEG_W;
     const uint16_t BAR_LEFT = (VOL_AREA_WIDTH - (SEG_COUNT * (SEG_W + SEG_GAP) - SEG_GAP)) / 2;
-    const uint16_t BAR_TOP  = VOL_AREA_HEIGHT - 28;  // canvas-on belül
-    const uint16_t SEG_H    = 14;
+    const uint16_t BAR_TOP  = VOL_AREA_HEIGHT - VOL_OVL_BAR_UP;  // canvas-on belül
+    const uint16_t SEG_H    = VOL_OVL_SEG_H;
 
     for (uint8_t i = 0; i < SEG_COUNT; i++) {
         uint16_t x = BAR_LEFT + i * (SEG_W + SEG_GAP);
@@ -1654,11 +1689,11 @@ void Display::_sdProgressDraw(int count) {
     if (font_vlw_20) {
         canvas.loadFont(font_vlw_20);
         canvas.setTextSize(1);
-        canvas.drawString(LANG::const_waitForSD, VOL_AREA_WIDTH / 2, 20);
+        canvas.drawString(LANG::const_waitForSD, VOL_AREA_WIDTH / 2, SD_OVL_TITLE_Y);
         canvas.unloadFont();
     } else {
         canvas.setTextSize(2);
-        canvas.drawString(LANG::const_waitForSD, VOL_AREA_WIDTH / 2, 20);
+        canvas.drawString(LANG::const_waitForSD, VOL_AREA_WIDTH / 2, SD_OVL_TITLE_Y);
     }
 
     // Nagy szám: indexelt fájlok száma
@@ -1669,11 +1704,11 @@ void Display::_sdProgressDraw(int count) {
         if (font_vlw_clock) {
             canvas.loadFont(font_vlw_clock);
             canvas.setTextSize(1);
-            canvas.drawString(buf, VOL_AREA_WIDTH / 2, 90);
+            canvas.drawString(buf, VOL_AREA_WIDTH / 2, SD_OVL_COUNT_Y);
             canvas.unloadFont();
         } else {
             canvas.setTextSize(7);
-            canvas.drawString(buf, VOL_AREA_WIDTH / 2, 90);
+            canvas.drawString(buf, VOL_AREA_WIDTH / 2, SD_OVL_COUNT_Y);
         }
     }
 

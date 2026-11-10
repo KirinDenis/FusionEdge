@@ -35,6 +35,7 @@ jobs:
           - { board: jc3248w535,   options: AXS15231B_options,       chip: esp32s3 }
           - { board: gen4-35ct,    options: gen4-ESP32-35CT_options, chip: esp32s3 }
           - { board: wrover-n16r8, options: esp32-wrover-n16r8,      chip: esp32 }
+          - { board: crowadv28,    options: CrowPanel-Advance-2.8_options, chip: esp32s3 }
     steps:
       - uses: actions/checkout@v4
 
