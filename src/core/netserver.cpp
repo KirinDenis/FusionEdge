@@ -374,6 +374,10 @@ static bool hasRequiredWebboardFiles() {
     }
   }
 
+#ifdef LITE_UI
+  // the new screen carries its letters in the firmware (src/lite), not in /fonts
+  (void)requiredFonts;
+#else
   for (size_t i = 0; i < sizeof(requiredFonts) / sizeof(requiredFonts[0]); i++) {
     String fontPath = String("/fonts/") + requiredFonts[i];
     if (!LittleFS.exists(fontPath)) {
@@ -381,6 +385,7 @@ static bool hasRequiredWebboardFiles() {
       ok = false;
     }
   }
+#endif
 
   return ok;
 }

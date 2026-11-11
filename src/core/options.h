@@ -22,6 +22,12 @@ STORE YOUR SETTINGS IN THE *** myoptions.h *** FILE.
 #    error "Choose either USE_CASSETTE_SCREENSAVER or USE_COVER_SCREENSAVER"
 #endif
 
+// -D LITE_UI in a board's build flags: the new screen (core/display_lite.cpp, src/lite) in place of
+// FusionEdge's own (core/display.cpp). A board without PSRAM has no room for FusionEdge's own
+#if defined(BOARD_NO_PSRAM) && !defined(LITE_UI)
+#    error "BOARD_NO_PSRAM needs -D LITE_UI: FusionEdge's own screen does not fit without PSRAM"
+#endif
+
 #if __has_include("../../mytheme.h")
 #    include "../../mytheme.h" /* <- Theme file */
 #endif

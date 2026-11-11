@@ -19,7 +19,11 @@ bool MP3Decoder::init() {
     m_IMDCTInfo.alloc("m_IMDCTInfo");
     m_SubbandInfo.alloc("m_SubbandInfo");
     m_MP3FrameInfo.alloc("m_MP3FrameInfo");
+#ifdef BOARD_NO_PSRAM
+    m_out16.alloc_array(MAX_NGRAN * MAX_NCHAN * 576, "m_out16"); // a frame's most: 2 granules x 576 x 2 channels
+#else
     m_out16.alloc_array(4608 * 2, "m_out16");
+#endif
 
     if (!m_MP3DecInfo.valid() || !m_FrameHeader.valid() || !m_SideInfo.valid() || !m_ScaleFactorJS.valid() || !m_HuffmanInfo.valid() || !m_DequantInfo.valid() || !m_IMDCTInfo.valid() ||
         !m_SubbandInfo.valid() || !m_MP3FrameInfo.valid() || !m_out16.valid()) {

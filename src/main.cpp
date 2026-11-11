@@ -131,6 +131,10 @@ static void clockTtsTask(void* /*param*/) {
 }
 
 static void startClockTtsTask() {
+#ifdef BOARD_NO_PSRAM
+    (void)clockTtsTask; // the spoken clock is a stream and a decoder of its own: no room without PSRAM
+    return;
+#endif
     if (clockTtsTaskHandle != nullptr) return;
 #if CONFIG_FREERTOS_UNICORE
     constexpr BaseType_t targetCore = 0;

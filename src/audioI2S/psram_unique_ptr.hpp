@@ -9,6 +9,14 @@
 #include <type_traits>
 #include <utility>
 
+#ifdef BOARD_NO_PSRAM
+// FusionEdge, a board without PSRAM: Arduino's ps_malloc asks the PSRAM alone and fails there, even
+// for a dozen bytes. Not all the calls below fall back to the internal heap: here all of them do
+#    define ps_malloc(size) malloc(size)
+#    define ps_calloc(n, size) calloc(n, size)
+#    define ps_realloc(p, size) realloc(p, size)
+#endif
+
 #ifndef PS_PTR_CLASS
     #define PS_PTR_CLASS 1
 

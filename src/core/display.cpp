@@ -1,5 +1,6 @@
 #include "Arduino.h"
 #include "options.h"
+#ifndef LITE_UI // the new screen, drawn in strips, is core/display_lite.cpp
 #include "WiFi.h"
 #include "time.h"
 #include "config.h"
@@ -2404,3 +2405,4 @@ void Display::modeSelectorConfirm()      {}
 void Display::modeSelectorClose()        {}
 void Display::modeSelectorTick()         {}
 #endif
+#endif // LITE_UI

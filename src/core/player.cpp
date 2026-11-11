@@ -61,12 +61,10 @@ float playerVolumeCurveDb(float t) {
 }
 } // namespace
 
-  #if !I2S_INTERNAL
-Player::Player() : _audioClientMutex(nullptr) {}
-  #else
-Player::Player() : Audio(true, I2S_DAC_CHANNEL_BOTH_EN), _audioClientMutex(nullptr) {}
+  #if I2S_INTERNAL && !defined(AUDIO_INTERNAL_DAC)
+    #error "I2S_INTERNAL needs the audio library built for the DAC: -D AUDIO_INTERNAL_DAC in the board's platformio.ini"
   #endif
-//#endif
+Player::Player() : _audioClientMutex(nullptr) {}
 
 void Player::init() {
   Serial.print("##[BOOT]#\tplayer.init\t");
@@ -103,6 +101,8 @@ void Player::init() {
 #if I2S_DOUT != 255
   #if !I2S_INTERNAL
   setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT, I2S_MCLK);
+  #else
+  setPinoutDAC(I2S_DOUT);  // the ESP32's own DAC on I2S_DOUT (GPIO 25 or 26), no I2S chip
   #endif
 #endif
   setBalance(-config.store.balance);  // "audio_change"   -16 to 16 fordítás 16 to -16

@@ -99,11 +99,40 @@ class LGFX_Base : public lgfx::LGFX_Device {
     auto cfg = _touch.config();
 
 #if TS_MODEL == TS_MODEL_XPT2046
+#ifdef TS_SPI_HOST
+    // the XPT2046 on pins and an SPI host of its own (the 2.8" CYD), not on the panel's bus
+    cfg.spi_host = static_cast<decltype(cfg.spi_host)>(TS_SPI_HOST);
+    cfg.pin_sclk = TS_SCK;
+    cfg.pin_mosi = TS_MOSI;
+    cfg.pin_miso = TS_MISO;
+    cfg.pin_cs = TS_CS;
+    cfg.pin_int = (TS_INT == 255) ? -1 : TS_INT;
+    cfg.bus_shared = false;
+    cfg.freq = 1000000;
+#elif defined(TS_MISO)
+    // on the panel's bus, which it reads through TS_MISO (the 3.5" CYD)
+    cfg.pin_sclk = TFT_SCK;
+    cfg.pin_mosi = TFT_MOSI;
+    cfg.pin_miso = TS_MISO;
+    cfg.pin_cs = TS_CS;
+    cfg.pin_int = (TS_INT == 255) ? -1 : TS_INT;
+    cfg.bus_shared = true;
+    applySpiHost(cfg);
+    cfg.freq = 1000000;
+#else
     cfg.pin_miso = 13;
     cfg.pin_cs = TS_CS;
     cfg.bus_shared = true;
     applySpiHost(cfg);
     cfg.freq = 2500000;
+#endif
+#ifdef TS_X_MIN
+    // the raw range the panel's corners give: the XPT2046 reads a resistance, not pixels
+    cfg.x_min = TS_X_MIN;
+    cfg.x_max = TS_X_MAX;
+    cfg.y_min = TS_Y_MIN;
+    cfg.y_max = TS_Y_MAX;
+#endif
     cfg.offset_rotation = _rotationOffset;
 #elif TS_MODEL == TS_MODEL_GT911 || TS_MODEL == TS_MODEL_FT6X36
     cfg.pin_sda = TS_SDA;

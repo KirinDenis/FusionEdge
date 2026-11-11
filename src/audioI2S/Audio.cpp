@@ -25,6 +25,24 @@ char audioI2SVers[] = "\
 #include "wav_decoder/wav_decoder.h"
 
 // constants
+#ifdef BOARD_NO_PSRAM
+// FusionEdge: a classic ESP32 without PSRAM. Every buffer here then lives in the internal RAM
+// beside WiFi, TLS and the screen, about 300 KB for all of them. An MP3 or AAC frame is a few KB
+// (the ICY metadata is cut out before the ring buffer), so the blocks shrink to that and the ring
+// to well over half a second of a 128 kbit/s stream. FLAC, Opus and Vorbis come in Ogg pages of up to
+// 64 KB: refused (createDecoder). The resampler is never asked for (setOutputSampleRate).
+#ifndef AUDIO_RING_NO_PSRAM
+#define AUDIO_RING_NO_PSRAM 10240
+#endif
+constexpr size_t m_frameSizeWav = 4096;
+constexpr size_t m_frameSizeMP3 = 4096;
+constexpr size_t m_frameSizeAAC = 4608;
+constexpr size_t m_frameSizeFLAC = 4608;   // never used: no FLAC decoder here
+constexpr size_t m_frameSizeOPUS = 4608;   // never used: no Opus decoder here
+constexpr size_t m_frameSizeVORBIS = 4608; // never used: no Vorbis decoder here
+constexpr size_t m_outbuffSize = 4096;     // a frame of HE-AAC v2 is 2048 stereo samples, of MP3 1152
+constexpr size_t m_resamplesBuffSize = 16; // no resampler without PSRAM
+#else
 constexpr size_t m_frameSizeWav = 4096;
 constexpr size_t m_frameSizeMP3 = 18000;         //  more than one icy-metaint
 // FusionEdge megjegyzés: a 18000-es érték (3.4.6q) "wrap holtsávot" okoz a
@@ -39,6 +57,7 @@ constexpr size_t m_frameSizeOPUS = UINT16_MAX;   // max ogg size
 constexpr size_t m_frameSizeVORBIS = UINT16_MAX; // OGG length is normally 4080 bytes, but can be reach 64KB in the metadata block
 constexpr size_t m_outbuffSize = 4608 * 2;
 constexpr size_t m_resamplesBuffSize = m_outbuffSize * 8; // SRmin: 6KHz -> SRmax: 48K
+#endif
 
 constexpr size_t AUDIO_STACK_SIZE = 4500;
 
@@ -85,8 +104,13 @@ __attribute__((weak)) void audio_process_raw_samples(int32_t* outBuff, int16_t v
 //
 
 AudioBuffer::AudioBuffer() {
+#ifdef BOARD_NO_PSRAM
+    m_mainBuffSize = AUDIO_RING_NO_PSRAM;
+    m_resBuffSize = m_frameSizeAAC; // the biggest block read in one piece
+#else
     m_mainBuffSize = UINT16_MAX * 10;
     m_resBuffSize = UINT16_MAX;
+#endif
 }
 
 AudioBuffer::~AudioBuffer() {
@@ -231,6 +255,9 @@ void AudioBuffer::bytesWritten(size_t bw) {
     }
 
     m_writePtr += bw;
+#if defined(BOARD_NO_PSRAM) || defined(LITE_UI)
+    m_totalWritten += bw;
+#endif
     if (bw) {
         if (m_writePtr == m_readPtr) m_isFull = true;
         m_isEmpty = false;
@@ -363,8 +390,12 @@ Audio::~Audio() {
     stopSong();
     setDefaults();
 
+#ifdef AUDIO_INTERNAL_DAC
+    dacClose();
+#else
     i2s_channel_disable(m_i2s_tx_handle);
     i2s_del_channel(m_i2s_tx_handle);
+#endif
     stopAudioTask();
     vSemaphoreDelete(mutex_playAudioData);
     vSemaphoreDelete(mutex_audioTask);
@@ -381,6 +412,15 @@ void Audio::destroy_decoder() {
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 std::unique_ptr<Decoder> Audio::createDecoder(const std::string& type) {
     destroy_decoder();
+#ifdef BOARD_NO_PSRAM
+    // new (std::nothrow): out of memory (an HTTPS stream's TLS takes most of it) is a station that
+    // fails, not an abort() that reboots the board into the same station again. AAC is left out:
+    // faad2 cannot open in the memory a board without PSRAM has left
+    if (type == "MP3") return std::unique_ptr<Decoder>(new (std::nothrow) MP3Decoder(*this));
+    if (type == "WAV") return std::unique_ptr<Decoder>(new (std::nothrow) WavDecoder(*this));
+    AUDIO_LOG_ERROR("{} needs PSRAM, this board has none: MP3 and WAV only", type.c_str());
+    return nullptr;
+#else
     if (type == "MP3") return std::make_unique<MP3Decoder>(*this);
     if (type == "FLAC") return std::make_unique<FlacDecoder>(*this);
     if (type == "OPUS") return std::make_unique<OpusDecoder>(*this);
@@ -388,6 +428,7 @@ std::unique_ptr<Decoder> Audio::createDecoder(const std::string& type) {
     if (type == "VORBIS") return std::make_unique<VorbisDecoder>(*this);
     if (type == "WAV") return std::make_unique<WavDecoder>(*this);
     return nullptr;
+#endif
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 void Audio::initInBuff() {
@@ -397,6 +438,33 @@ void Audio::initInBuff() {
     }
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+#ifdef AUDIO_INTERNAL_DAC
+// FusionEdge: the built-in DAC in place of the I2S channel (setPinoutDAC). The same three calls as
+// the I2S ones below, the same meaning: start returns ESP_OK only when it turned the output on.
+esp_err_t Audio::I2Sstart() {
+    if (!m_dac_handle && !dacOpen(m_i2s_items.sampleRate)) return ESP_FAIL;
+    esp_err_t err = ESP_FAIL;
+    if (!m_dac_enabled) {
+        err = dac_continuous_enable(m_dac_handle);
+        if (err == ESP_OK) m_dac_enabled = true;
+    }
+    return err;
+}
+// —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+esp_err_t Audio::I2Sstop() {
+    m_outBuff.clear();
+    m_resamplesBuff.clear();
+    std::fill(std::begin(m_inputHistory), std::end(m_inputHistory), 0);
+    esp_err_t err = ESP_FAIL;
+    if (m_dac_enabled) err = dac_continuous_disable(m_dac_handle);
+    m_dac_enabled = false;
+    return err;
+}
+// —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+void Audio::zeroI2Sbuff() {
+    // the DAC holds the last sample's voltage until new samples come: nothing to clear
+}
+#else
 esp_err_t Audio::I2Sstart() {
     zeroI2Sbuff();
     esp_err_t err = ESP_FAIL;
@@ -422,6 +490,7 @@ void Audio::zeroI2Sbuff() {
     size_t  bytes_loaded = 0; // As a replacement, we write a small amount of zeros in the buffer and thus reset the entire buffer.
     i2s_channel_preload_data(m_i2s_tx_handle, buff, 2, &bytes_loaded);
 }
+#endif
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 void Audio::setDefaults() {
     stopSong();
@@ -3474,11 +3543,15 @@ void IRAM_ATTR Audio::playChunk() {
     //------------------------------------------------------------------------------------------------------
 
 i2swrite:
+#ifdef AUDIO_INTERNAL_DAC
+    m_plCh.err = dacWrite(m_outBuff.get() + m_plCh.count, m_validSamples, &m_plCh.i2s_bytesConsumed);
+#else
     if (m_output_sr && m_output_sr != m_i2s_items.sampleRate) { // with resampler
         m_plCh.err = i2s_channel_write(m_i2s_tx_handle, m_resamplesBuff.get() + m_plCh.count, m_validSamples * BYTES_PER_FRAME, &m_plCh.i2s_bytesConsumed, 50);
     } else { // without resampler
         m_plCh.err = i2s_channel_write(m_i2s_tx_handle, m_outBuff.get() + m_plCh.count, m_validSamples * BYTES_PER_FRAME, &m_plCh.i2s_bytesConsumed, 20);
     }
+#endif
 
     if (!(m_plCh.err == ESP_OK || m_plCh.err == ESP_ERR_TIMEOUT)) goto exit;
     m_validSamples -= m_plCh.i2s_bytesConsumed / BYTES_PER_FRAME;
@@ -5133,6 +5206,11 @@ bool Audio::initializeDecoder() {
         if (!m_decoder || !m_decoder->init()) {
             AUDIO_LOG_ERROR("The {Decoder could not be initialized", type);
             stopSong();
+#ifdef BOARD_NO_PSRAM
+            // out of memory without PSRAM: a decoder whose init() failed is not valid, so
+            // destroy_decoder() leaves it, and the next initializeDecoder() would decode with it
+            m_decoder.reset();
+#endif
             return false;
         }
     }
@@ -5873,11 +5951,13 @@ bool Audio::setPinout(uint8_t BCLK, uint8_t LRC, uint8_t DOUT, int8_t MCLK) {
 #endif
 
     m_f_psramFound = psramInit();
+#ifndef BOARD_NO_PSRAM
     if (!m_f_psramFound) {
         AUDIO_LOG_ERROR("PSRAM not found");
         result = false;
         goto exit;
     }
+#endif
 
     m_outBuff.alloc_array(m_outbuffSize, "m_outBuff");
     m_resamplesBuff.alloc_array(m_resamplesBuffSize, "m_resamplesBuff");
@@ -5927,6 +6007,109 @@ exit:
     m_f_I2S_init = result;
     return m_f_I2S_init;
 }
+#ifdef AUDIO_INTERNAL_DAC
+// —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+// FusionEdge: the classic ESP32's built-in DAC as the output (boards with a speaker amplifier on
+// GPIO 26 or 25 and no I2S chip, such as the 2.8" and 3.5" CYD). setPinout's buffers, without I2S.
+// The DAC is 8 bits and one channel here: the player mixes to mono (PLAYER_FORCE_MONO).
+bool Audio::setPinoutDAC(uint8_t DOUT) {
+    bool result = true;
+    if (DOUT == 25) {
+        m_dac_mask = DAC_CHANNEL_MASK_CH0;
+    } else if (DOUT == 26) {
+        m_dac_mask = DAC_CHANNEL_MASK_CH1;
+    } else {
+        AUDIO_LOG_ERROR("the DAC is on GPIO 25 or 26, not {}", DOUT);
+        result = false;
+        goto exit;
+    }
+    // no VU meter and no spectrum of the library's own: their delay line and FFT buffers are RAM this
+    // board has not got. The screen's spectrum (core/spectrumAnalyzer) takes the samples on its own
+    settings.VU_LEVEL = false;
+    settings.SPECTRUM = false;
+
+    m_f_psramFound = psramInit();
+    m_outBuff.alloc_array(m_outbuffSize, "m_outBuff");
+    m_resamplesBuff.alloc_array(m_resamplesBuffSize, "m_resamplesBuff");
+    m_dac_buff.alloc(m_outbuffSize / 2, "m_dac_buff"); // a byte for each stereo frame
+    m_metadataBuff.alloc(4096 + 1, "m_metadataBuff");
+    m_httpRespHdrBuff.alloc(2048, "m_httpRespHdrBuff"); // a radio's header is under 1 KB; a longer one is cut
+
+    if (!m_outBuff.valid() || !m_dac_buff.valid() || !m_resamplesBuff.valid() || !m_metadataBuff.valid() ||
+        !m_httpRespHdrBuff.valid()) {
+        result = false;
+        goto exit;
+    }
+
+    trim(audioI2SVers);
+    info(*this, evt_info, "audioI2S {}, built-in DAC on GPIO {}", audioI2SVers, DOUT);
+
+    I2Sstop();
+    if (!dacOpen(m_i2s_items.sampleRate)) {
+        result = false;
+        goto exit;
+    }
+    I2Sstart();
+
+exit:
+    calculateVolumeLimits();
+    startAudioTask();
+
+    m_f_I2S_init = result;
+    return m_f_I2S_init;
+}
+// —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+bool Audio::dacOpen(uint32_t rate) {
+    dacClose();
+    if (rate < 8000) rate = 44100; // before the first stream says its rate
+    dac_continuous_config_t cfg = {};
+    cfg.chan_mask = m_dac_mask;
+    cfg.desc_num = 6;    // 6 x 512 samples, about 70 ms at 44.1 kHz: the display's SPI can hold the task up
+    cfg.buf_size = 1024; // bytes; on the ESP32 every 8-bit sample takes two in the DMA
+    cfg.freq_hz = rate;
+    cfg.offset = 0;
+    cfg.clk_src = DAC_DIGI_CLK_SRC_APLL; // the audio PLL makes 44.1 and 48 kHz exactly; the default stops at 19.6 kHz
+    cfg.chan_mode = DAC_CHANNEL_MODE_SIMUL;
+    esp_err_t err = dac_continuous_new_channels(&cfg, &m_dac_handle);
+    if (err != ESP_OK) {
+        AUDIO_LOG_ERROR("DAC at {} Hz: error {}", rate, (int)err);
+        m_dac_handle = nullptr;
+        return false;
+    }
+    m_dac_rate = rate;
+    return true;
+}
+// —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+void Audio::dacClose() {
+    if (!m_dac_handle) return;
+    if (m_dac_enabled) dac_continuous_disable(m_dac_handle);
+    m_dac_enabled = false;
+    dac_continuous_del_channels(m_dac_handle);
+    m_dac_handle = nullptr;
+    m_dac_rate = 0;
+}
+// —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+// count stereo frames of 32-bit samples in, one unsigned byte each out: the mean of the two channels,
+// its top 8 bits, moved up by half the range (silence is the DAC's middle). bytesConsumed counts as
+// the I2S write does, 8 bytes a frame, and is all of them: playChunk's resume after a part written
+// counts in another unit, so a chunk is never left half written here.
+esp_err_t Audio::dacWrite(const int32_t* frames, int32_t count, size_t* bytesConsumed) {
+    *bytesConsumed = 0;
+    if (!m_dac_handle || !m_dac_enabled) return ESP_ERR_INVALID_STATE;
+    if (count <= 0) return ESP_OK;
+    const int32_t room = (int32_t)(m_outbuffSize / 2);
+    if (count > room) count = room;
+    uint8_t* out = m_dac_buff.get();
+    for (int32_t i = 0; i < count; i++) {
+        int32_t mono = (frames[i * 2] >> 1) + (frames[i * 2 + 1] >> 1); // halves first: the sum would overflow
+        out[i] = (uint8_t)((mono >> 24) + 128);                          // -128..127 -> 0..255
+    }
+    size_t    loaded = 0;
+    esp_err_t err = dac_continuous_write(m_dac_handle, out, (size_t)count, &loaded, 200);
+    *bytesConsumed = (size_t)count * 2 * sizeof(int32_t);
+    return (err == ESP_ERR_TIMEOUT) ? ESP_OK : err; // a late DMA drops the rest of the chunk, the next one plays
+}
+#endif
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 uint32_t Audio::getFileSize() { // returns the size of webfile or local file
     if (!m_audiofile) {
@@ -6252,6 +6435,20 @@ void Audio::setI2SCommFMT_LSB(bool commFMT) {
     return;
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+#ifdef AUDIO_INTERNAL_DAC
+// the DAC's clock is set when its channel is made: a new sample rate makes the channel again
+void Audio::reconfigI2S() {
+    if (!m_dac_handle) return; // before setPinoutDAC()
+    uint32_t rate = m_i2s_items.sampleRate;
+    if (rate == m_dac_rate) return;
+    if (spi_lock_callback) spi_lock_callback(true);
+    bool wasOn = m_dac_enabled;
+    if (dacOpen(rate) && wasOn) {
+        if (dac_continuous_enable(m_dac_handle) == ESP_OK) m_dac_enabled = true;
+    }
+    if (spi_lock_callback) spi_lock_callback(false);
+}
+#else
 void Audio::reconfigI2S() {
 
     // FusionEdge: SPI DMA védelme reconfigI2S körül (LovyanGFX ütközés elkerülése)
@@ -6282,6 +6479,7 @@ void Audio::reconfigI2S() {
 
     if (spi_lock_callback) spi_lock_callback(false);
 }
+#endif
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 void Audio::calculateVUlevel(int32_t* sample) { // Envelope-Follower
 
@@ -6386,6 +6584,12 @@ void Audio::forceMono(bool m) { // #100 mono option
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 void Audio::setOutputSampleRate(OutputSR_t sr) { //
+#ifdef BOARD_NO_PSRAM
+    (void)sr;
+    m_output_sr = SR_ORIGIN; // the resampler's buffer needs PSRAM: the output keeps the source's rate
+    reconfigI2S();
+    return;
+#endif
     if (sr == SR_44100) {
         m_output_sr = SR_44100; // output sr is always 44.1KHz
     } else if (sr == SR_48000) {
@@ -7838,7 +8042,11 @@ void Audio::audioTask() {
 void Audio::performAudioTask() {
     if (!m_f_running) {
         int32_t c[2] = {0};
+#ifdef AUDIO_INTERNAL_DAC
+        if (settings.VU_LEVEL) calculateVUlevel(c); // the DAC build has no VU buffers (setPinoutDAC)
+#else
         calculateVUlevel(c);
+#endif
         gain_ramp();
         vTaskDelay(20);
         return;

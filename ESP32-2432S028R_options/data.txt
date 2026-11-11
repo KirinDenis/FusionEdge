@@ -1,0 +1,5 @@
+# what goes into this board's LittleFS image, paths under data/ (.github/board-data.sh)
+# the fonts are in the firmware; station logos, weather icons and the screensaver do not fit in 4 MB
+data
+www
+images/logo300x118.png

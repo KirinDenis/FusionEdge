@@ -22,6 +22,9 @@
 #include <codecvt>
 #include <deque>
 #include <driver/i2s_std.h>
+#ifdef AUDIO_INTERNAL_DAC
+#include <driver/dac_continuous.h>
+#endif
 #include <esp32-hal-log.h>
 #include <functional>
 #include <libb64/cencode.h>
@@ -61,8 +64,14 @@ class AudioBuffer {
     uint8_t* getReadPtr();            // returns the current readpointer
     void     reset();                 // restore defaults
     void     showStatus();
+#if defined(BOARD_NO_PSRAM) || defined(LITE_UI)
+    uint32_t totalWritten() const { return m_totalWritten; } // FusionEdge: all the bytes that came in, for the screen's traffic
+#endif
 
   protected:
+#if defined(BOARD_NO_PSRAM) || defined(LITE_UI)
+    volatile uint32_t m_totalWritten = 0;
+#endif
     size_t          m_mainBuffSize = 0; // most webstreams limit the advance to 100...300Kbytes
     size_t          m_freeSpace = 0;
     size_t          m_writeSpace = 0;
@@ -158,6 +167,10 @@ class Audio {
     bool             setAudioPlayTime(uint16_t sec);
     bool             setTimeOffset(int sec);
     bool             setPinout(uint8_t BCLK, uint8_t LRC, uint8_t DOUT, int8_t MCLK = I2S_GPIO_UNUSED);
+#ifdef AUDIO_INTERNAL_DAC
+    // no I2S chip: the classic ESP32's own 8-bit DAC on GPIO 25 or 26 plays, in mono (setPinout's place)
+    bool             setPinoutDAC(uint8_t DOUT);
+#endif
     bool             pauseResume();
     bool             isRunning() { return m_f_running; }
     bool             hasUnsupportedContent() { return m_f_unsupportedContent; } // FusionEdge: true if connect ok but stream content was not playable
@@ -187,6 +200,9 @@ class Audio {
     uint32_t         inBufferFilled();  // returns the number of stored bytes in the inputbuffer
     uint32_t         inBufferFree();    // returns the number of free bytes in the inputbuffer
     uint32_t         getInBufferSize(); // returns the size of the inputbuffer in bytes
+#if defined(BOARD_NO_PSRAM) || defined(LITE_UI)
+    uint32_t         streamBytes() { return InBuff.totalWritten(); } // all the bytes that came in since the start
+#endif
     bool             setSampleRate(uint32_t hz);
     void             inBufferStatus() { InBuff.showStatus(); }
     void             setTone(float gainLowPass, float gainBandPass, float gainHighPass);
@@ -413,6 +429,17 @@ class Audio {
     i2s_std_config_t  m_i2s_std_cfg = {};  // stores I2S driver values
 
 #pragma GCC diagnostic pop
+
+#ifdef AUDIO_INTERNAL_DAC
+    dac_continuous_handle_t m_dac_handle = nullptr; // the DAC's DMA channel, made again for each sample rate
+    dac_channel_mask_t      m_dac_mask = DAC_CHANNEL_MASK_CH1;
+    uint32_t                m_dac_rate = 0;
+    bool                    m_dac_enabled = false;
+    ps_ptr<uint8_t>         m_dac_buff; // a chunk's samples as the DAC takes them, one unsigned byte each
+    bool                    dacOpen(uint32_t rate);
+    void                    dacClose();
+    esp_err_t               dacWrite(const int32_t* frames, int32_t count, size_t* bytesConsumed);
+#endif
 
     std::vector<ps_ptr<char>> m_playlistContent; // m3u8 playlist buffer from responseHeader
     std::vector<ps_ptr<char>> m_playlistURL;     // m3u8 streamURLs buffer

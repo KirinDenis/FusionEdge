@@ -18,6 +18,8 @@ compile_commands.json
 *~
 Thumbs.db
 .DS_Store
+# the LittleFS content of a 4 MB board, made by .github/board-data.sh
+build-data/
 
 # Optional local secrets
 mqttoptions.h

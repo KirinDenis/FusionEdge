@@ -36,6 +36,15 @@ jobs:
           - { board: gen4-35ct,    options: gen4-ESP32-35CT_options, chip: esp32s3 }
           - { board: wrover-n16r8, options: esp32-wrover-n16r8,      chip: esp32 }
           - { board: crowadv28,    options: CrowPanel-Advance-2.8_options, chip: esp32s3 }
+          - { board: cyd28,        options: ESP32-2432S028R_options, chip: esp32 }
+          - { board: e32r35t,      options: E32R35T_options,         chip: esp32 }
+          # the same boards with the new screen (core/display_lite.cpp, src/lite) in place of FusionEdge's
+          # own: the same firmware otherwise, its flags added to the board's build_flags
+          - { board: s3-ili9488-newui,   options: "",                      chip: esp32s3, flags: "-DLITE_UI -DLITE_SCREEN_W=480 -DLITE_SCREEN_H=320" }
+          - { board: jc3248w535-newui,   options: AXS15231B_options,       chip: esp32s3, flags: "-DLITE_UI -DLITE_SCREEN_W=480 -DLITE_SCREEN_H=320" }
+          - { board: gen4-35ct-newui,    options: gen4-ESP32-35CT_options, chip: esp32s3, flags: "-DLITE_UI -DLITE_SCREEN_W=480 -DLITE_SCREEN_H=320" }
+          - { board: wrover-n16r8-newui, options: esp32-wrover-n16r8,      chip: esp32,   flags: "-DLITE_UI -DLITE_SCREEN_W=480 -DLITE_SCREEN_H=320" }
+          - { board: crowadv28-newui,    options: CrowPanel-Advance-2.8_options, chip: esp32s3, flags: "-DLITE_UI -DLITE_SCREEN_W=320 -DLITE_SCREEN_H=240" }
     steps:
       - uses: actions/checkout@v4
 
@@ -55,11 +64,16 @@ jobs:
       - name: Build
         env:
           OPTIONS: ${{ matrix.options }}
+          PLATFORMIO_BUILD_FLAGS: ${{ matrix.flags }}
         run: |
           if [ -n "$OPTIONS" ]; then
             cp "$OPTIONS/myoptions.h" myoptions.h
             if [ -f "$OPTIONS/platformio.ini" ]; then
               cp "$OPTIONS/platformio.ini" platformio.ini
+            fi
+            # a 4 MB board takes part of data/ into its LittleFS image (data_dir = build-data)
+            if [ -f "$OPTIONS/data.txt" ]; then
+              bash .github/board-data.sh "$OPTIONS"
             fi
           fi
           ENV=$(sed -n 's/^\[env:\(.*\)\]/\1/p' platformio.ini | head -n 1)

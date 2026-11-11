@@ -10,12 +10,18 @@ VERSION="$2"
 
 for dir in "$FW"/*/; do
   board=$(basename "$dir")
+  screen=""
   case "$board" in
+    *-newui) screen=', new screen' ;;   # the same board with the new screen (-D LITE_UI)
+  esac
+  case "${board%-newui}" in
     s3-ili9488)   name='ESP32-S3 DevKitC-1 N16R8 with a 3.5" ILI9488'; family='ESP32-S3' ;;
     jc3248w535)   name='Guition JC3248W535 (AXS15231B)';               family='ESP32-S3' ;;
     gen4-35ct)    name='4D Systems gen4-ESP32-35CT';                    family='ESP32-S3' ;;
     wrover-n16r8) name='ESP32-WROVER-E N16R8 (experimental)';           family='ESP32' ;;
     crowadv28)    name='Elecrow CrowPanel Advance 2.8" (new)';          family='ESP32-S3' ;;
+    cyd28)        name='ESP32-2432S028R, the 2.8" CYD (new)';           family='ESP32' ;;
+    e32r35t)      name='LCDWIKI E32R35T, 3.5" ESP32-32E (new)';         family='ESP32' ;;
     *) echo "skipping unknown folder $board"; continue ;;
   esac
   all=""
@@ -41,7 +47,7 @@ for dir in "$FW"/*/; do
     fi
     cat > "$out" <<JSON
 {
-  "name": "FusionEdge - ${name//\"/\\\"}$what",
+  "name": "FusionEdge - ${name//\"/\\\"}$screen$what",
   "version": "$VERSION",
   "new_install_prompt_erase": true,
   "builds": [ { "chipFamily": "$family", "parts": [ $parts ] } ]

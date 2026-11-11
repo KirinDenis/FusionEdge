@@ -283,7 +283,7 @@ void TouchScreen::loop() {
     static uint32_t      touchLongPress;
     static tsDirection_e direct;
     static uint16_t      touchVol, touchStation;
-#    if (DSP_WIDTH == 480) && (DSP_HEIGHT == 320)
+#    if (DSP_WIDTH == 480) && (DSP_HEIGHT == 320) && !defined(LITE_UI)
     static uint32_t presetsLastActivity = 0;
     static int      presetActionDone = 0; // 0=play, 1=save, 2=del
     static int      presetHoldSlot = -1;
@@ -324,7 +324,7 @@ void TouchScreen::loop() {
     bool newTouch = (stTouched && !lastStTouched);
     bool endTouch = (!stTouched && lastStTouched);
 
-#    if (DSP_WIDTH == 480) && (DSP_HEIGHT == 320)
+#    if (DSP_WIDTH == 480) && (DSP_HEIGHT == 320) && !defined(LITE_UI)
     // Auto-exit presets screen after 15s
     if (display.mode() == PRESETS) {
         if (presets_toastExpired()) { return; }
@@ -360,7 +360,7 @@ void TouchScreen::loop() {
             touchLongPress = millis();
             specLongTriggered = false;
 
-#    if (DSP_WIDTH == 480) && (DSP_HEIGHT == 320)
+#    if (DSP_WIDTH == 480) && (DSP_HEIGHT == 320) && !defined(LITE_UI)
             if (display.mode() == PRESETS && !presets_keyboardActive()) {
                 presetHoldSlot = presets_hitTest(touchX, touchY);
                 presetActionDone = 0;
@@ -459,7 +459,7 @@ void TouchScreen::loop() {
             }
         }
 /********************************** PRESETS HOLD (real-time) ************************************/
-#    if (DSP_WIDTH == 480) && (DSP_HEIGHT == 320)
+#    if (DSP_WIDTH == 480) && (DSP_HEIGHT == 320) && !defined(LITE_UI)
         if (display.mode() == PRESETS && !presets_keyboardActive()) {
             uint32_t held = millis() - touchLongPress;
 
@@ -526,7 +526,7 @@ void TouchScreen::loop() {
                     goto finish_touch;
                 }
 
-#    if (DSP_WIDTH == 480) && (DSP_HEIGHT == 320)
+#    if (DSP_WIDTH == 480) && (DSP_HEIGHT == 320) && !defined(LITE_UI)
                 presets_clearPressed();
                 presets_setPressedSlot(-1);
 
@@ -650,7 +650,7 @@ void TouchScreen::loop() {
             }
 
         finish_touch:
-#    if (DSP_WIDTH == 480) && (DSP_HEIGHT == 320)
+#    if (DSP_WIDTH == 480) && (DSP_HEIGHT == 320) && !defined(LITE_UI)
             presetHoldSlot = -1;
             presetActionDone = 0;
             specLongTriggered = false;

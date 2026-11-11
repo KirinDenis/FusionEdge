@@ -7,10 +7,17 @@
 #include <string.h>
 #include "esp_dsp.h"
 
+#ifdef BOARD_NO_PSRAM                // half the FFT, half its 8 KB of static RAM: the same bands, coarser
+#define SA_FFT_SIZE    256
+#define SA_BANDS_MAX   64
+#define SA_BIN_LOW     1      // ~172 Hz @ 44100/256
+#define SA_BIN_HIGH    93     // ~16 kHz
+#else
 #define SA_FFT_SIZE    512
 #define SA_BANDS_MAX   64
 #define SA_BIN_LOW     2      // ~172 Hz @ 44100/512
 #define SA_BIN_HIGH    186    // ~16 kHz
+#endif
 #define SA_UPDATE_MS   100
 
 // Sample kiolvasás: a dekóder int16 értékeket ír int32* bufferbe (packed, alsó 16 bit).
