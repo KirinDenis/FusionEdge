@@ -20,6 +20,13 @@ The bundled ESP32-audioI2S tree contains codec implementations with their own no
 
 > Code from FAAD2 is copyright (c) Nero AG, www.nero.com
 
+## The new screen
+
+The new screen (`src/lite`, drawn by `src/core/display_lite.cpp`) carries:
+
+- `gfx.c`, `font.c` and its MICRO pixel font from [OWLOS Flight Radar](https://github.com/KirinDenis/OWLOS-FLIGHT-RADAR), MIT, Copyright (c) 2026 Denys Kirin: `licenses/OWLOS-Flight-Radar-MIT.txt`.
+- the letters in `font_*.c`, baked from Cascadia Mono, Copyright (c) 2019 - Present, Microsoft Corporation, with Reserved Font Name Cascadia Code, under the SIL Open Font License 1.1: `licenses/CascadiaMono-OFL-1.1.txt`.
+
 ## PlatformIO dependencies
 
 The build downloads additional libraries declared in `platformio.ini`, including LovyanGFX, RTClib, Adafruit BusIO and Adafruit NeoPixel. These dependencies are not part of this repository and remain under their respective upstream licenses.

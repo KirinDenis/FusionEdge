@@ -1,8 +1,37 @@
 <p align="center">
-<img width="1536" height="1024" alt="Fusion_EDGE" src="https://github.com/user-attachments/assets/ac32ea6a-53a3-4aed-b5e3-69afc1bff3bf" />
+<img src="docs/new-screen.gif" alt="The new screen: the player with its clock; a tap on the sound indicator turns the bars into a scope, another into a radar" />
 </p>
 
-# FusionEdge
+# FusionEdge, flashed from the browser
+
+This is a fork of [SimZs/FusionEdge](https://github.com/SimZs/FusionEdge), the ESP32 internet radio firmware
+that grew from [VTomRadio](https://github.com/VaraiTamas/VTomRadio/tree/main) and
+[yoRadio](https://github.com/e2002/yoradio). The firmware is FusionEdge's; the fork adds three things.
+
+**The flasher site: [kirindenis.github.io/FusionEdge](https://kirindenis.github.io/FusionEdge/).** Pick your
+board, press the button, pick its port: Chrome or Edge writes the firmware over the USB cable, then sends the
+radio your WiFi over the same cable. GitHub Actions builds every board on each push
+(`.github/workflows/flasher.yml`), and the site keeps the older versions to go back to.
+
+**Two boards without PSRAM.** The ESP32-2432S028R, the 2.8" "Cheap Yellow Display", and LCDWIKI's 3.5"
+E32R35T: classic ESP32s with 4 MB of flash. They play MP3 streams over plain HTTP through the ESP32's own
+DAC, 8-bit mono, into a small speaker on the board's socket. See
+[ESP32-2432S028R_options](ESP32-2432S028R_options/README.md) and [E32R35T_options](E32R35T_options/README.md).
+
+**The new screen**, the one above, for every board: the player with the clock and a sound indicator that
+changes with a tap (bars, a scope, a radar), the station list, the stream's numbers with its last minute of
+traffic as a graph, and settings. The boards without PSRAM have only this one; on the others it is a switch
+on the board's card on the site, the firmware otherwise the same. See [src/lite](src/lite/README.md).
+
+The new screen has run on the two boards without PSRAM. On the boards with PSRAM it has not been run yet: if
+you have one, flash it from the site and tell how it went in
+[Issues](https://github.com/KirinDenis/FusionEdge/issues).
+
+The rest of this page is FusionEdge's own README.
+
+---
+
+## About FusionEdge
 
 FusionEdge is an ESP32-S3 internet radio firmware built on the yoRadio codebase. It uses LovyanGFX and LittleFS and adds a 480x320 touch-oriented interface, spectrum and waveform visualizations, optional Bluetooth audio input, SD and DLNA playback, WebUI control, encoders, weather information and theme support.
 
@@ -328,6 +357,7 @@ To add logos for your own stations, see the
   backlight/Wi-Fi hardware tuning by Volodimyr Zagranichniy
 - Smaller-display and selectable-screensaver community MOD by Scott Barber
 - FusionEdge development by SimZs and contributors
+- The flasher site, the two boards without PSRAM and the new screen in this fork by Denys Kirin
 
 Bundled and external components retain their own copyrights and licenses. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
