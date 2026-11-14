@@ -435,10 +435,15 @@ class Audio {
     dac_channel_mask_t      m_dac_mask = DAC_CHANNEL_MASK_CH1;
     uint32_t                m_dac_rate = 0;
     bool                    m_dac_enabled = false;
-    ps_ptr<uint8_t>         m_dac_buff; // a chunk's samples as the DAC takes them, one unsigned byte each
+    ps_ptr<uint8_t>         m_dac_buff; // a chunk's samples as the DAC takes them, two unsigned bytes a frame
+    int32_t                 m_dac_last = 0; // the frame before's mono sample: where the next halfway point starts (dacWrite)
+    int32_t                 m_dac_err1 = 0; // the last sample's 8-bit rounding error, fed into the next ones (dacQuantize)
+    int32_t                 m_dac_err2 = 0; // and the one before it
+    uint32_t                m_dac_rand = 1; // the dither's random numbers, xorshift32
     bool                    dacOpen(uint32_t rate);
     void                    dacClose();
     esp_err_t               dacWrite(const int32_t* frames, int32_t count, size_t* bytesConsumed);
+    uint8_t                 dacQuantize(int32_t sample);
 #endif
 
     std::vector<ps_ptr<char>> m_playlistContent; // m3u8 playlist buffer from responseHeader

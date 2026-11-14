@@ -25,7 +25,10 @@ As on the 2.8" CYD (see `ESP32-2432S028R_options/README.md`), `platformio.ini`
 sets `LITE_UI`, `BOARD_NO_PSRAM`, `AUDIO_INTERNAL_DAC` and the screen's size,
 480x320: the new screen in place of FusionEdge's own, drawn two pixel rows at a
 time, MP3 streams over plain HTTP, and the sound from the ESP32's own DAC on
-GPIO 26 in mono. The screen, its taps and swipes are described in that README.
+GPIO 26 in mono. The screen, its taps and swipes, and how the sound is made are
+described in that README. Here `AUDIO_DAC_LEVEL` is 70: at the DAC's full swing
+this board's amplifier began to break up on loud passages at volume 19 of 21;
+at 70 the top step plays about 3 dB under that and was heard clean.
 The LittleFS image holds the web pages, the boot logo and the weather icons
 (`data.txt`). The firmware is updated from the flasher page or over USB.
 

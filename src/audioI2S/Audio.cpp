@@ -458,6 +458,9 @@ esp_err_t Audio::I2Sstop() {
     esp_err_t err = ESP_FAIL;
     if (m_dac_enabled) err = dac_continuous_disable(m_dac_handle);
     m_dac_enabled = false;
+    m_dac_last = 0; // the next sound's first halfway point starts from silence
+    m_dac_err1 = 0; // and owes no rounding errors
+    m_dac_err2 = 0;
     return err;
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
@@ -6031,7 +6034,7 @@ bool Audio::setPinoutDAC(uint8_t DOUT) {
     m_f_psramFound = psramInit();
     m_outBuff.alloc_array(m_outbuffSize, "m_outBuff");
     m_resamplesBuff.alloc_array(m_resamplesBuffSize, "m_resamplesBuff");
-    m_dac_buff.alloc(m_outbuffSize / 2, "m_dac_buff"); // a byte for each stereo frame
+    m_dac_buff.alloc(m_outbuffSize / 2, "m_dac_buff"); // two bytes a frame for half a chunk: dacWrite sends a chunk in parts
     m_metadataBuff.alloc(4096 + 1, "m_metadataBuff");
     m_httpRespHdrBuff.alloc(2048, "m_httpRespHdrBuff"); // a radio's header is under 1 KB; a longer one is cut
 
@@ -6064,11 +6067,15 @@ bool Audio::dacOpen(uint32_t rate) {
     if (rate < 8000) rate = 44100; // before the first stream says its rate
     dac_continuous_config_t cfg = {};
     cfg.chan_mask = m_dac_mask;
-    cfg.desc_num = 6;    // 6 x 512 samples, about 70 ms at 44.1 kHz: the display's SPI can hold the task up
+    cfg.desc_num = 8;    // 8 x 512 samples, about 46 ms at 88.2 kHz: the display's SPI can hold the task up
     cfg.buf_size = 1024; // bytes; on the ESP32 every 8-bit sample takes two in the DMA
-    cfg.freq_hz = rate;
+    cfg.freq_hz = rate * 2; // twice the stream's rate: dacWrite puts a halfway point between every two frames
     cfg.offset = 0;
-    cfg.clk_src = DAC_DIGI_CLK_SRC_APLL; // the audio PLL makes 44.1 and 48 kHz exactly; the default stops at 19.6 kHz
+    // the default clock, not the audio PLL: with the APLL the DAC crackled all the time a stream played,
+    // even when it held one level, and stopped when the DMA was stopped (heard on the 3.5" E32R35T);
+    // with the default clock it is gone, and 44.1 kHz measured 44100.1. The default goes down to
+    // 19.6 kHz only: a slower DAC rate keeps the APLL, crackle and all, rather than no sound
+    cfg.clk_src = cfg.freq_hz >= 19600 ? DAC_DIGI_CLK_SRC_DEFAULT : DAC_DIGI_CLK_SRC_APLL;
     cfg.chan_mode = DAC_CHANNEL_MODE_SIMUL;
     esp_err_t err = dac_continuous_new_channels(&cfg, &m_dac_handle);
     if (err != ESP_OK) {
@@ -6089,25 +6096,85 @@ void Audio::dacClose() {
     m_dac_rate = 0;
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
-// count stereo frames of 32-bit samples in, one unsigned byte each out: the mean of the two channels,
-// its top 8 bits, moved up by half the range (silence is the DAC's middle). bytesConsumed counts as
-// the I2S write does, 8 bytes a frame, and is all of them: playChunk's resume after a part written
-// counts in another unit, so a chunk is never left half written here.
+// AUDIO_DAC_LEVEL: how much of the DAC's swing the loudest sound takes, in percent, for a board whose
+// speaker amplifier clips before the DAC's full swing (a build flag in the board's platformio.ini).
+// The 3.5" E32R35T plays clean at full swing, volume step 19 of 21. The 2.8" E32R28T has the same
+// FM8002E amplifier with about 10 dB more gain: it played clean to step 10 (-12 dB) and strained at 11
+// (-10 dB), so it takes 28 (-11 dB) and its top step (-1 dB on the stock curve) plays at -12 dB
+#ifndef AUDIO_DAC_LEVEL
+#    define AUDIO_DAC_LEVEL 100
+#endif
+constexpr int64_t DAC_LEVEL = (int64_t)AUDIO_DAC_LEVEL * 65536 / 100;
+// —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+// count stereo frames of 32-bit samples in, two unsigned bytes each out, at twice the stream's rate:
+// the mean of the two channels at AUDIO_DAC_LEVEL, and before it the point halfway from the frame
+// before, each one made 8 bits by dacQuantize. An 8-bit DAC at the stream's own rate also sends the
+// music's mirror images above half that rate (a cat took notice of them on the 2.8" E32R28T): the
+// halfway points take those near the rate down by 20 dB and more, and what is left lies above 66 kHz.
+// bytesConsumed counts as the I2S write does, 8 bytes a frame, and is all of them: playChunk's resume
+// after a part written counts in another unit, so a chunk is never left half written here.
+//
+// The order: the DAC driver puts each sample in a 16-bit slot of the DMA buffer, two slots to a 32-bit
+// word, and the ESP32's I2S sends a word's second slot first. Sent in memory's order, every two
+// neighbouring samples came out the other way round, which mirrors the music around half the sample
+// rate: a hiss of digital noise over it, heard on the 3.5" E32R35T. A frame's two samples fill one
+// word, so the halfway point, to be sent first, goes second.
 esp_err_t Audio::dacWrite(const int32_t* frames, int32_t count, size_t* bytesConsumed) {
     *bytesConsumed = 0;
     if (!m_dac_handle || !m_dac_enabled) return ESP_ERR_INVALID_STATE;
     if (count <= 0) return ESP_OK;
-    const int32_t room = (int32_t)(m_outbuffSize / 2);
+    const int32_t room = (int32_t)(m_outbuffSize / 2); // frames in a chunk at most
     if (count > room) count = room;
-    uint8_t* out = m_dac_buff.get();
-    for (int32_t i = 0; i < count; i++) {
-        int32_t mono = (frames[i * 2] >> 1) + (frames[i * 2 + 1] >> 1); // halves first: the sum would overflow
-        out[i] = (uint8_t)((mono >> 24) + 128);                          // -128..127 -> 0..255
+    uint8_t*  out = m_dac_buff.get();
+    esp_err_t err = ESP_OK;
+    for (int32_t first = 0; first < count && err == ESP_OK; first += room / 2) {
+        const int32_t last = std::min(count, first + room / 2); // m_dac_buff holds half a chunk
+        size_t        n = 0;
+        for (int32_t i = first; i < last; i++) {
+            const int64_t sum = (int64_t)frames[i * 2] + frames[i * 2 + 1];
+            const int32_t mono = (int32_t)((sum * DAC_LEVEL) >> 17); // the channels' mean, at AUDIO_DAC_LEVEL
+            const int32_t half = (m_dac_last >> 1) + (mono >> 1);    // halfway from the frame before
+            m_dac_last = mono;
+            const uint8_t sentFirst = dacQuantize(half);             // quantized in the order they play:
+            const uint8_t sentSecond = dacQuantize(mono);            // each one's error goes into the next
+            out[n++] = sentSecond;
+            out[n++] = sentFirst;
+        }
+        size_t loaded = 0;
+        err = dac_continuous_write(m_dac_handle, out, n, &loaded, 200);
+        if (loaded < n && (loaded & 1)) {
+            size_t one = 0; // a late DMA took an odd number: one more keeps the pairs on its words
+            dac_continuous_write(m_dac_handle, out + loaded, 1, &one, 200);
+        }
     }
-    size_t    loaded = 0;
-    esp_err_t err = dac_continuous_write(m_dac_handle, out, (size_t)count, &loaded, 200);
     *bytesConsumed = (size_t)count * 2 * sizeof(int32_t);
     return (err == ESP_ERR_TIMEOUT) ? ESP_OK : err; // a late DMA drops the rest of the chunk, the next one plays
+}
+// —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+// one 32-bit sample to the DAC's unsigned 8 bits. Cut to 8 bits as it is, a quiet passage only a few
+// steps tall comes out a coarse staircase: hoarse on every loud note even at low volume (heard on the
+// 2.8" E32R28T). Here each sample's rounding error is taken off the next two, as 2e[n-1] - e[n-2]: the
+// error's noise moves up towards half the DAC's rate (44.1 kHz for a 44.1 kHz stream), out of the band
+// the ear hears best: 2 kHz 34 dB quieter, 5 kHz 18 dB, 10 kHz 6 dB. Half a step of random dither goes
+// into the rounding, so the error stays noise and does not follow the music: replayed on a PC, a 1 kHz
+// sine's harmonics came out 13 to 21 dB lower than cut, the hoarseness gone by ear on the 2.8". A sample
+// at full level can reach the DAC's ends: the rounding clips there, and the error fed back is held to
+// two steps so it cannot run away.
+uint8_t Audio::dacQuantize(int32_t sample) {
+    const int64_t want = (int64_t)sample - (2 * (int64_t)m_dac_err1 - m_dac_err2); // the sample, less the errors before
+    m_dac_rand ^= m_dac_rand << 13;                                                  // xorshift32
+    m_dac_rand ^= m_dac_rand >> 17;
+    m_dac_rand ^= m_dac_rand << 5;
+    const int32_t dither = (int32_t)(m_dac_rand >> 8) - (1 << 23); // -0.5 .. 0.5 of a step (1 << 24)
+    int64_t       step = (want + dither + (1 << 23)) >> 24;        // the nearest 8-bit step
+    if (step > 127) step = 127;
+    if (step < -128) step = -128;
+    int64_t err = step * (1 << 24) - want;
+    if (err > (2 << 24)) err = 2 << 24;
+    if (err < -(2 << 24)) err = -(2 << 24);
+    m_dac_err2 = m_dac_err1;
+    m_dac_err1 = (int32_t)err;
+    return (uint8_t)(step + 128); // -128..127 -> 0..255: silence is the DAC's middle
 }
 #endif
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
