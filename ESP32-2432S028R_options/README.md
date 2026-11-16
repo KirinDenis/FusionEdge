@@ -31,9 +31,7 @@ FusionEdge is written for boards with PSRAM. This board has none, so its
   and sprites in RAM and does not fit beside the player and the WiFi, so the
   new screen takes its place: `src/core/display_lite.cpp` draws it two pixel
   rows at a time (`src/lite`, see "The screen" below). `LITE_SCREEN_W` and
-  `LITE_SCREEN_H` give its size, 320x240. A board with PSRAM can have the same
-  screen with these three flags alone, and the flasher site builds every board
-  with PSRAM both ways (`src/lite/README.md`).
+  `LITE_SCREEN_H` give its size, 320x240.
 - `BOARD_NO_PSRAM`: the audio buffers are small: MP3 streams play; AAC, FLAC,
   Opus and Vorbis do not, their decoders need more memory than is left. An
   HTTPS stream does not play either: its encryption leaves about 5 KB in one

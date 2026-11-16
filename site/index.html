@@ -42,19 +42,12 @@
     width: 100%; padding: 11px 14px; border: 1px solid var(--accent); border-radius: 8px; cursor: pointer;
     font: 700 15px system-ui, sans-serif; letter-spacing: .5px; color: var(--on-accent); background: var(--accent);
   }
-  .flash.quiet button { color: var(--accent); background: transparent; }
   .nope { color: var(--bad); font-size: 15px; }
   .files { font-size: 14px; }
   .files summary { cursor: pointer; color: var(--accent); }
   .files pre { margin: 8px 0 0; padding: 8px 10px; overflow-x: auto; border-radius: 8px; background: var(--code); white-space: pre; }
   .files ul { padding-left: 18px; }
   .gone { font-size: 15px; color: var(--dim); }
-  .screen { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--dim); }
-  .screen .seg { display: flex; flex: 1; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-  .screen button { flex: 1; padding: 6px 8px; border: 0; background: transparent; color: var(--ink); font: inherit; cursor: pointer; }
-  .screen button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); font-weight: 700; }
-  .card .screen { margin-top: auto; }              /* the switch goes down with the buttons */
-  .card .screen ~ .flash { margin-top: 0; }
   .wifi { margin-top: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
   .wifi form { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; align-items: end; }
   .wifi label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--dim); }
@@ -88,33 +81,33 @@
         <select id="versions"></select>
       </label>
     </div>
-    <p class="dim" style="margin-top:8px">Not every build here has been run on a board: the CrowPanel and the new
-       screen on the boards with PSRAM have not, the two CYD-style boards have. The pins are the ones in the
-       board's <code>myoptions.h</code>, linked on each card: check them against your wiring.</p>
+    <p class="dim" style="margin-top:8px">Not every build here has been run on a board: the CrowPanel has not,
+       the two CYD-style boards have. The pins are the ones in the board's <code>myoptions.h</code>, linked on
+       each card: check them against your wiring.</p>
 
     <div class="grid">
-      <article class="card" data-board="s3-ili9488" data-chip="esp32s3" data-newui>
+      <article class="card" data-board="s3-ili9488" data-chip="esp32s3">
         <h3>ESP32-S3 DevKitC-1 N16R8 with a 3.5" ILI9488</h3>
         <div class="spec">The project's main build. A 480x320 ILI9488 SPI display with FT6X36 capacitive touch,
           a PCM5102A DAC, one encoder, an SD card, an IR receiver and the QCC5124EL Bluetooth module.
           Pins: <a href="https://github.com/@REPO@/blob/HEAD/myoptions.h">myoptions.h</a>.</div>
       </article>
 
-      <article class="card" data-board="jc3248w535" data-chip="esp32s3" data-newui>
+      <article class="card" data-board="jc3248w535" data-chip="esp32s3">
         <h3>Guition JC3248W535</h3>
         <div class="spec">ESP32-S3 N16R8 with its own 3.5" 480x320 AXS15231B QSPI display and touch. A PCM5102A
           DAC, one encoder and an SD card. Pins:
           <a href="https://github.com/@REPO@/blob/HEAD/AXS15231B_options/myoptions.h">AXS15231B_options/myoptions.h</a>.</div>
       </article>
 
-      <article class="card" data-board="gen4-35ct" data-chip="esp32s3" data-newui>
+      <article class="card" data-board="gen4-35ct" data-chip="esp32s3">
         <h3>4D Systems gen4-ESP32-35CT</h3>
         <div class="spec">ESP32-S3 N16R8 with its own 3.5" ILI9488 display, FocalTech capacitive touch and
           microSD. The I2S DAC on GPIO 38, 39 and 40. Bluetooth, IR and encoders are off. Pins:
           <a href="https://github.com/@REPO@/blob/HEAD/gen4-ESP32-35CT_options/myoptions.h">gen4-ESP32-35CT_options/myoptions.h</a>.</div>
       </article>
 
-      <article class="card" data-board="wrover-n16r8" data-chip="esp32" data-newui>
+      <article class="card" data-board="wrover-n16r8" data-chip="esp32">
         <h3>ESP32-WROVER-E N16R8</h3>
         <div class="spec">The classic ESP32, not the S3. An ILI9488 SPI display, an I2S DAC and two encoders.
           Touch, SD, Bluetooth, DLNA and album covers are off. Pins:
@@ -124,7 +117,7 @@
           page can be slow while it plays, and HTTPS streams may fail.</div>
       </article>
 
-      <article class="card" data-board="crowadv28" data-chip="esp32s3" data-newui>
+      <article class="card" data-board="crowadv28" data-chip="esp32s3">
         <h3>Elecrow CrowPanel Advance 2.8"</h3>
         <div class="spec">ESP32-S3 N16R8 with its own 2.8" 320x240 ST7789 IPS display, FT6336U capacitive touch,
           microSD and a speaker on its NS4168 amplifier: nothing to wire. Not the plain CrowPanel 2.8", which is a
@@ -158,29 +151,17 @@
           sound.</div>
       </article>
     </div>
-
-    <h3 style="margin-top:18px">The screen</h3>
-    <p class="dim" style="margin-top:6px">A board with PSRAM has a choice on its card. <b>FusionEdge's</b> is the
-       project's own screen. <b>New</b> is a different one, the same firmware otherwise: the player with the
-       song, the clock and a sound indicator (bars, a scope, a radar), and nothing on it to aim at: a tap
-       anywhere opens big buttons for the station list, previous, play or stop, next and the volume, with the
-       stream's numbers and the settings beside them. Swipe up or down for the volume, left or right for the
-       next station. The two CYD-style boards have no PSRAM: they come with the new screen only, and a button
-       for the level of their DAC too. It has run on those two; on the boards with PSRAM it has not been run yet.</p>
   </section>
 
   <section>
     <h2>2. Before you press</h2>
     <ul>
-      <li><b>INSTALL EVERYTHING</b> writes the firmware and the radio's files: its web pages, fonts, pictures,
-          the station list and the WiFi list. Use it on a new board, and for a new version. It takes several
+      <li><b>INSTALL</b> writes the firmware and the radio's files: its web pages, fonts, pictures, the
+          station list and the WiFi list. Use it on a new board, and for a new version. It takes several
           minutes: about 6 MB go over the cable.</li>
       <li>It then asks whether to erase. <b>Yes</b> on a new board or one that had other firmware on it.
           <b>No</b> for an update: the radio's settings stay. The station list and the WiFi list still go back
           to the ones it came with, so export them from the radio's web page first and import them after.</li>
-      <li><b>UPDATE FIRMWARE ONLY</b> leaves all the radio's files as they are, no to erase. The web pages then
-          stay at their old version too, and the project asks for the matching files with a new version: when
-          in doubt, INSTALL EVERYTHING.</li>
       <li>No port in the list? The cable may only charge, or the USB chip's driver is missing (CH340, CP210x).</li>
       <li>It won't connect? Hold <b>BOOT</b>, press and let go of <b>RST</b>, let go of BOOT, then press the
           button here again.</li>
@@ -210,11 +191,12 @@
       <li>Or without the cable: with no WiFi known the radio opens its own network, <b>FusionEdge_AP</b>, password
           <b>12345987</b>. Join it, open <code>http://192.168.4.1</code> and give the radio your WiFi there.</li>
       <li>The radio speaks the language its <code>myoptions.h</code> sets: Hungarian on most boards, English on
-          the CrowPanel and the two CYD-style boards. The new screen's own words are English on every board.
-          For another language, build it yourself as the
+          the CrowPanel and the two CYD-style boards. For another language, build it yourself as the
           <a href="https://github.com/@REPO@#build">README</a> says.</li>
-      <li>Later updates of the firmware alone can also go in through the radio's own web page, Update, with
-          the <b>firmware.bin</b> from your board's card, under Files for esptool and other tools.</li>
+      <li>Later updates of the firmware alone, the station list and the WiFi list kept, can also go in
+          through the radio's own web page, Update, with the <b>firmware.bin</b> from your board's card, under
+          Files for esptool and other tools. Not on the two CYD-style boards: their 4 MB of flash hold one
+          firmware, and it is updated over the cable.</li>
     </ul>
   </section>
 
@@ -225,15 +207,10 @@
 </div>
 
 <template id="tools">
-  <esp-web-install-button class="flash" data-kind="all">
-    <button slot="activate">INSTALL EVERYTHING</button>
+  <esp-web-install-button class="flash">
+    <button slot="activate">INSTALL</button>
     <span slot="unsupported" class="nope">This browser can't flash. Use Chrome or Edge on a computer.</span>
     <span slot="not-allowed" class="nope">Flashing needs the page over https.</span>
-  </esp-web-install-button>
-  <esp-web-install-button class="flash quiet" data-kind="app">
-    <button slot="activate">UPDATE FIRMWARE ONLY</button>
-    <span slot="unsupported"></span>
-    <span slot="not-allowed"></span>
   </esp-web-install-button>
   <div class="gone" hidden>Not in this version.</div>
   <details class="files">
@@ -250,40 +227,8 @@
 const $ = (id) => document.getElementById(id);
 const cards = [...document.querySelectorAll('.card')];
 let dir = 'fw';                    // where the picked version's folders are: fw, or fw/<version>
-let current = null;                // the version shown
-
-// a card with data-newui has a second build, <board>-newui, with the new screen: its switch picks one
-const boardOf = (card) => card.dataset.board + (card.dataset.screen === 'new' ? '-newui' : '');
-
-function screenSwitch(card) {
-  const box = document.createElement('div');
-  box.className = 'screen';
-  const seg = document.createElement('div');
-  seg.className = 'seg';
-  for (const [value, text] of [['', "FusionEdge's"], ['new', 'New']]) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = text;
-    b.setAttribute('aria-pressed', String(value === ''));
-    b.addEventListener('click', () => {
-      card.dataset.screen = value;
-      for (const other of seg.children) {
-        other.setAttribute('aria-pressed', String(other === b));
-      }
-      if (current) {
-        showCard(card, current);
-      }
-    });
-    seg.append(b);
-  }
-  box.append('Screen', seg);
-  return box;
-}
 
 for (const card of cards) {
-  if ('newui' in card.dataset) {
-    card.append(screenSwitch(card));
-  }
   card.append($('tools').content.cloneNode(true));
   card.querySelector('details').addEventListener('toggle', (e) => {
     if (e.target.open) {
@@ -296,7 +241,7 @@ for (const card of cards) {
 
 // flash_args says what goes where: the same file the manifests are made from
 async function listFiles(card) {
-  const board = boardOf(card);
+  const board = card.dataset.board;
   const base = `${dir}/${board}/`;
   const answer = await fetch(base + 'flash_args');
   if (!answer.ok) {
@@ -325,20 +270,17 @@ async function listFiles(card) {
 }
 
 function showCard(card, version) {
-  const board = boardOf(card);
+  const board = card.dataset.board;
   const there = version.boards.includes(board);
-  for (const button of card.querySelectorAll('esp-web-install-button')) {
-    const name = button.dataset.kind === 'all' ? 'manifest.json' : 'manifest-app.json';
-    button.setAttribute('manifest', `${version.dir}/${board}/${name}`);
-    button.hidden = !there;
-  }
+  const button = card.querySelector('esp-web-install-button');
+  button.setAttribute('manifest', `${version.dir}/${board}/manifest.json`);
+  button.hidden = !there;
   card.querySelector('.gone').hidden = there;
   card.querySelector('.files').hidden = !there;
   card.querySelector('.files').open = false;
 }
 
 function show(version) {
-  current = version;
   dir = version.dir;
   for (const card of cards) {
     showCard(card, version);
@@ -347,7 +289,7 @@ function show(version) {
 }
 
 async function versions() {
-  const all = cards.flatMap((c) => ('newui' in c.dataset ? [c.dataset.board, c.dataset.board + '-newui'] : [c.dataset.board]));
+  const all = cards.map((c) => c.dataset.board);
   show({ dir: 'fw', text: $('version').textContent, boards: all });     // before the list comes, or without it
   const answer = await fetch('fw/versions.json', { cache: 'no-cache' });
   if (!answer.ok) {

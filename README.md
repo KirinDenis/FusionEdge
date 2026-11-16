@@ -18,14 +18,9 @@ E32R35T: classic ESP32s with 4 MB of flash. They play MP3 streams over plain HTT
 DAC, 8-bit mono, into a small speaker on the board's socket. See
 [ESP32-2432S028R_options](ESP32-2432S028R_options/README.md) and [E32R35T_options](E32R35T_options/README.md).
 
-**The new screen**, the one above, for every board: the player with the clock and a sound indicator that
-changes with a tap (bars, a scope, a radar), the station list, the stream's numbers with its last minute of
-traffic as a graph, and settings. The boards without PSRAM have only this one; on the others it is a switch
-on the board's card on the site, the firmware otherwise the same. See [src/lite](src/lite/README.md).
-
-The new screen has run on the two boards without PSRAM. On the boards with PSRAM it has not been run yet: if
-you have one, flash it from the site and tell how it went in
-[Issues](https://github.com/KirinDenis/FusionEdge/issues).
+**The new screen**, the one above, on the two boards without PSRAM: the player with the clock and a sound
+indicator that changes with a tap (bars, a scope, a radar), the station list, the stream's numbers with its
+last minute of traffic as a graph, and settings. See [src/lite](src/lite/README.md).
 
 The rest of this page is FusionEdge's own README.
 

@@ -8,8 +8,7 @@ drawn again.
 
 ## Building a board with it
 
-Add three flags to the board's `build_flags`, or to `PLATFORMIO_BUILD_FLAGS`
-as the flasher site's CI does:
+Add three flags to the board's `build_flags`:
 
     -D LITE_UI -D LITE_SCREEN_W=480 -D LITE_SCREEN_H=320
 
