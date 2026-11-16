@@ -49,10 +49,20 @@ class AsyncAbstractResponse: public AsyncWebServerResponse {
     std::vector<uint8_t> _cache;
     size_t _readDataFromCacheOrContent(uint8_t* data, const size_t len);
     size_t _fillBufferAndProcessTemplates(uint8_t* buf, size_t maxLen);
+#if defined(BOARD_NO_PSRAM)
+    // FusionEdge: a piece lwIP had no memory for, kept as it was and sent first on the next ack or poll (_ack)
+    uint8_t* _pendingBuf = nullptr;
+    size_t   _pendingLen = 0;
+    size_t   _pendingSent = 0;    // the content in it, as _sentLength counts
+    bool     _pendingLast = false;
+#endif
   protected:
     AwsTemplateProcessor _callback;
   public:
     AsyncAbstractResponse(AwsTemplateProcessor callback=nullptr);
+#if defined(BOARD_NO_PSRAM)
+    ~AsyncAbstractResponse() { free(_pendingBuf); }
+#endif
     void _respond(AsyncWebServerRequest *request);
     size_t _ack(AsyncWebServerRequest *request, size_t len, uint32_t time);
     bool _sourceValid() const { return false; }

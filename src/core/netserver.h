@@ -198,13 +198,18 @@ if(boardForm&&imagesFolder&&folderStatus){
 </html>
 )";
 // index.html
+#ifdef LITE_UI
+#define INDEX_THEME_COLOR "#5ce1ff"   // the new screen's accent (netserver.cpp, LITE_THEME_CSS)
+#else
+#define INDEX_THEME_COLOR "#96c30a"
+#endif
 const char index_html[] PROGMEM = R"(
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#96c30a">
+  <meta name="theme-color" content=")" INDEX_THEME_COLOR R"(">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="icon" type="image/png" href="/favicon.png">

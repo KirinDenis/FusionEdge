@@ -76,6 +76,102 @@ static constexpr uint32_t WIFI_SCAN_MAX_WAIT_MS = 15000;
 static bool     g_webboardUploadHadError = false;
 static AsyncWebServerRequest *g_webboardUploadRequest = nullptr;
 
+#ifdef LITE_UI
+// FusionEdge: with the new screen the page takes the screen's colours (src/lite/radio_ui.c, its first
+// theme, ARCTIC) in place of data/www/theme.css, and no logo: the logo was a 71 KB picture the page
+// waited for before it showed the stations. The rules carry !important because some pages load
+// theme.css before style.css and some after.
+static const char LITE_THEME_CSS[] PROGMEM = R"(:root {
+--main-bg-color:        #030812;
+--main-text-color:      #b8d0e6;
+--main-hl-color:        #eaf7ff;
+--odd-bg-color:         #09162e;
+--accent-color:         #5ce1ff;
+--accent-dark:          #2e82b2;
+--accent-text-color:    #030812;
+--input-border:         #102a52;
+--logo:                 #5ce1ff;
+--logo-red:             #ffb848;
+--logo-shadow:          #2e82b2;
+--playlist-hover:       #102a52;
+--section-gradient:     #081a36;
+--section-border:       #24466e;
+--heapbar-color:        #2e82b2;
+}
+#logo, #logo.ls { height: auto !important; margin: 0 !important; }
+#logo svg { display: none !important; }
+#logow { min-height: 54px; }
+)";
+static const char LITE_LOGO_SVG[] PROGMEM = R"(<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0"></svg>)";
+#endif
+
+#ifdef BOARD_NO_PSRAM
+// FusionEdge: a board without PSRAM has about 20 KB of memory left while a stream plays. The page's
+// four files at once took it to nothing and their connections were reset: the radio's page did not
+// open (the 2.8" E32R28T). Here they go one at a time: each waits until the one before has been sent
+// and its connection closed. All of it runs in the web server's one task.
+struct WebFileJob {
+  AsyncWebServerRequest *request;
+  const char *plainPath, *gzipPath, *contentType;
+  bool plainAvailable, gzipAvailable;
+};
+static constexpr int WEB_FILE_QUEUE = 8;
+static WebFileJob s_webFileQueue[WEB_FILE_QUEUE];
+static int s_webFileQueued = 0;
+static AsyncWebServerRequest *s_webFileSending = nullptr;
+
+static void webFileNext();
+
+static void webFileSend(const WebFileJob &job) {
+  s_webFileSending = job.request;
+  job.request->onDisconnect([]() {   // sent, or the browser went away: the next one
+    s_webFileSending = nullptr;
+    webFileNext();
+  });
+  if (job.plainAvailable) {
+    job.request->send(LittleFS, job.plainPath, job.contentType);
+    return;
+  }
+  AsyncWebServerResponse *response = job.request->beginResponse(LittleFS, job.gzipPath, job.contentType);
+  response->addHeader("Content-Encoding", "gzip");
+  job.request->send(response);
+}
+
+static void webFileNext() {
+  if (s_webFileSending || s_webFileQueued == 0) {
+    return;
+  }
+  const WebFileJob job = s_webFileQueue[0];
+  memmove(&s_webFileQueue[0], &s_webFileQueue[1], (size_t)(s_webFileQueued - 1) * sizeof(WebFileJob));
+  s_webFileQueued--;
+  webFileSend(job);
+}
+
+static void webFileForget(AsyncWebServerRequest *request) {   // a browser gave up waiting
+  for (int i = 0; i < s_webFileQueued; i++) {
+    if (s_webFileQueue[i].request == request) {
+      memmove(&s_webFileQueue[i], &s_webFileQueue[i + 1], (size_t)(s_webFileQueued - i - 1) * sizeof(WebFileJob));
+      s_webFileQueued--;
+      return;
+    }
+  }
+}
+
+static void webFileQueue(const WebFileJob &job) {
+  if (!s_webFileSending) {
+    webFileSend(job);
+    return;
+  }
+  if (s_webFileQueued == WEB_FILE_QUEUE) {
+    job.request->send(503, "text/plain", "Busy");
+    return;
+  }
+  s_webFileQueue[s_webFileQueued++] = job;
+  AsyncWebServerRequest *request = job.request;
+  request->onDisconnect([request]() { webFileForget(request); });
+}
+#endif
+
 namespace {
 constexpr uint32_t WS_PLAY_SETTLE_MS = 120;
 portMUX_TYPE g_wsPlayMux = portMUX_INITIALIZER_UNLOCKED;
@@ -866,8 +962,10 @@ bool NetServer::begin(bool quiet) {
   const bool scriptGzip = LittleFS.exists("/www/script.js.gz");
   const bool stylePlain = LittleFS.exists("/www/style.css");
   const bool styleGzip = LittleFS.exists("/www/style.css.gz");
+#ifndef LITE_UI
   const bool themePlain = LittleFS.exists("/www/theme.css");
   const bool themeGzip = LittleFS.exists("/www/theme.css.gz");
+#endif
   const bool dragPlain = LittleFS.exists("/www/dragpl.js");
   const bool dragGzip = LittleFS.exists("/www/dragpl.js.gz");
 
@@ -880,6 +978,12 @@ bool NetServer::begin(bool quiet) {
       log_w("##[WEBMEM]# low internal heap path='%s' free=%u largest=%u",
             plainAvailable ? plainPath : gzipPath, (unsigned)internalFree,
             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    }
+#endif
+#ifdef BOARD_NO_PSRAM
+    if (plainAvailable || gzipAvailable) {
+      webFileQueue({request, plainPath, gzipPath, contentType, plainAvailable, gzipAvailable});
+      return;
     }
 #endif
     if (plainAvailable) {
@@ -904,10 +1008,19 @@ bool NetServer::begin(bool quiet) {
     sendWebFile(request, "/www/style.css", "/www/style.css.gz", "text/css",
                 stylePlain, styleGzip);
   });
+#ifdef LITE_UI
+  webserver.on("/theme.css", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send_P(200, "text/css", LITE_THEME_CSS);
+  });
+  webserver.on("/logo.svg", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send_P(200, "image/svg+xml", LITE_LOGO_SVG);
+  });
+#else
   webserver.on("/theme.css", HTTP_GET, [sendWebFile, themePlain, themeGzip](AsyncWebServerRequest *request) {
     sendWebFile(request, "/www/theme.css", "/www/theme.css.gz", "text/css",
                 themePlain, themeGzip);
   });
+#endif
   webserver.on("/dragpl.js", HTTP_GET, [sendWebFile, dragPlain, dragGzip](AsyncWebServerRequest *request) {
     sendWebFile(request, "/www/dragpl.js", "/www/dragpl.js.gz", "application/javascript",
                 dragPlain, dragGzip);

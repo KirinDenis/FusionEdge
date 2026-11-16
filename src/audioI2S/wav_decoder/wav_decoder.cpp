@@ -65,6 +65,12 @@ int32_t WavDecoder::decode(uint8_t* inbuf, int32_t* bytesLeft, int32_t* outbuf) 
 
     uint16_t       frame = *bytesLeft;
     const uint8_t* p = inbuf;
+#ifdef BOARD_NO_PSRAM
+    // FusionEdge: without PSRAM the out buffer holds an MP3 frame, 1152 stereo samples (Audio.cpp's
+    // m_outbuffSize): a call takes no more of the input than makes that many
+    const int32_t most = 1152 * m_channels * (m_bits_per_sample / 8);
+    if (most > 0 && frame > most) frame = (uint16_t)most;
+#endif
 
     // ------------ 8-BIT PCM unsigned ------------
     if (m_bits_per_sample == 8) {

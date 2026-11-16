@@ -10,20 +10,21 @@
 extern "C" {
 #endif
 
+// RADIO_PLAYER shows what plays and takes no aim: a tap anywhere on it opens RADIO_CONTROLS, big
+// buttons for a finger, which go back to the player when nobody touches them for a while
 enum {
     RADIO_PLAYER, RADIO_LIST, RADIO_SETUP, RADIO_BOOT, RADIO_MESSAGE, RADIO_BLANK,
-    RADIO_STATS, RADIO_SETTINGS, RADIO_CALIB
+    RADIO_STATS, RADIO_SETTINGS, RADIO_CALIB, RADIO_CONTROLS
 };
 
-// the indicator in the player's middle, changed by a tap on it
+// the indicator in the player's middle, chosen in the settings
 enum { RADIO_IND_LED, RADIO_IND_SCOPE, RADIO_IND_RADAR, RADIO_INDICATORS };
 
 // the parts of the screen, as bits: what radio_dirty() and radio_moving() say to draw again
 #define RADIO_HEAD  1
 #define RADIO_TITLE 2
 #define RADIO_MID   4
-#define RADIO_FOOT  8
-#define RADIO_ALL   15
+#define RADIO_ALL   7
 
 #define RADIO_BANDS_MAX 24
 #define RADIO_TOUCH_MS  450
@@ -53,13 +54,13 @@ typedef struct {
     // the knobs and the line
     int      volume, volume_max;
     int      volume_big;        // 1: the volume shown big over the middle, the knob was just turned
+    int      dac_level;         // the built-in DAC's level, percent (RADIO_CONTROLS); 0: no such knob
     int      buffer_pct;        // the stream's buffer, 0..100
     int      rssi;              // dBm, 0: no WiFi
     char     ip[16];
 
     // the indicator
     int      indicator;         // RADIO_IND_...
-    int      indicator_named;   // 1: its name shown in its corner, it was just changed
     uint8_t  bands[RADIO_BANDS_MAX];   // the spectrum, 0..255 a band
     uint8_t  peaks[RADIO_BANDS_MAX];   // each band's recent highest, falling slowly
     uint8_t  ghost[3][RADIO_BANDS_MAX];// the spectrum's last frames, newest first: the scope's afterglow
@@ -108,7 +109,6 @@ typedef struct {
     int head_y, head_h;         // the station
     int title_y, title_h;       // the song
     int mid_y, mid_h;           // the indicator, the clock, and the big volume over them
-    int foot_y, foot_h;         // volume, buffer, WiFi, address, settings
     int list_y, list_rowh;      // the list and settings screens: their first row's top, a row's height
     int list_rows;              // and how many rows fit
 } radio_layout_t;
@@ -128,10 +128,13 @@ int radio_dirty(const radio_t *was, const radio_t *now);
 // boot's light. drawn again every frame or so while this says so
 int radio_moving(const radio_t *r);
 
-// what a tap at x, y on this screen means. *arg: the row (RADIO_HIT_ROW) or the volume (RADIO_HIT_VOLUME)
+// what a tap at x, y on this screen means; *arg: the row (RADIO_HIT_ROW). The player: CONTROLS, from
+// any tap. The controls: STATION (the list), STATS (the stream's numbers), SETTINGS, PREV, PLAYSTOP,
+// NEXT, VOL_DOWN, VOL_UP, LEVEL_DOWN, LEVEL_UP. The list, the settings, the numbers: BACK, ROW
 enum {
-    RADIO_HIT_NONE, RADIO_HIT_STATION, RADIO_HIT_PLAYSTOP, RADIO_HIT_TITLE, RADIO_HIT_INDICATOR,
-    RADIO_HIT_CLOCK, RADIO_HIT_VOLUME, RADIO_HIT_SETTINGS, RADIO_HIT_BACK, RADIO_HIT_ROW
+    RADIO_HIT_NONE, RADIO_HIT_CONTROLS, RADIO_HIT_STATION, RADIO_HIT_STATS, RADIO_HIT_SETTINGS,
+    RADIO_HIT_PREV, RADIO_HIT_PLAYSTOP, RADIO_HIT_NEXT, RADIO_HIT_VOL_DOWN, RADIO_HIT_VOL_UP,
+    RADIO_HIT_LEVEL_DOWN, RADIO_HIT_LEVEL_UP, RADIO_HIT_BACK, RADIO_HIT_ROW
 };
 int radio_hit(const radio_t *r, int x, int y, int *arg);
 

@@ -92,10 +92,8 @@ void radio_layout(radio_layout_t *l)
     l->head_h = BIG ? 50 : 38;
     l->title_y = l->head_h;
     l->title_h = BIG ? 48 : 38;
-    l->foot_h = BIG ? 74 : 56;
-    l->foot_y = H - l->foot_h;
-    l->mid_y = l->title_y + l->title_h;
-    l->mid_h = l->foot_y - l->mid_y;
+    l->mid_y = l->title_y + l->title_h;    // to the bottom: the volume and the rest are on RADIO_CONTROLS
+    l->mid_h = H - l->mid_y;
     l->list_y = M + LIST_HEAD_H + 4;
     l->list_rowh = ROW_H;
     l->list_rows = (H - l->list_y - M) / ROW_H;
@@ -280,7 +278,6 @@ static void chevron(canvas_t *cv, int x, int y, int h, uint32_t c)
 /* ---- the geometry the drawing and the hits share ---- */
 
 #define STATE_W (BIG ? 12 : 9)             // the play state's sign, top right
-#define STATE_HIT (BIG ? 64 : 48)          // and the width that takes a tap for it
 #define MID_PAD (BIG ? 12 : 8)
 #define GEAR_R  (BIG ? 13.0f : 10.0f)
 
@@ -320,32 +317,6 @@ static void lines_box(int *x, int *w)
 {
     *x = 2 * M + 14;
     *w = W - 4 * M - 28;
-}
-
-// the footer: its two rows, the volume's bar, the gear
-typedef struct {
-    int x, y, w, h;          // the panel
-    int lx, ly, by;          // the labels' x, the volume row's y, the buffer row's y
-    int bx, bw, bh;          // the bars
-    float gx, gy;            // the gear's middle
-    int rx;                  // where the WiFi and the address end, left of the gear
-} foot_t;
-
-static void foot_geometry(const radio_layout_t *l, foot_t *f)
-{
-    f->x = M;
-    f->y = l->foot_y;
-    f->w = W - 2 * M;
-    f->h = l->foot_h - M;
-    f->lx = f->x + 8;
-    f->ly = f->y + (BIG ? 12 : 9);
-    f->by = f->ly + (BIG ? 26 : 19);
-    f->bx = f->lx + micro_width("VOL", SC) + 8;
-    f->bw = f->w * (BIG ? 50 : 46) / 100 - (f->bx - f->x);
-    f->bh = MICRO_H * SC - SC;
-    f->gx = f->x + f->w - 8 - GEAR_R;
-    f->gy = f->y + f->h / 2.0f;
-    f->rx = (int)(f->gx - GEAR_R - (BIG ? 14 : 10));
 }
 
 /* ---- the indicators ---- */
@@ -651,11 +622,6 @@ static void draw_mid(canvas_t *cv, const radio_t *r, const rtheme_t *t, const ra
             draw_led(cv, r, t, ix, iy, iw, ih);
             break;
     }
-    if (r->indicator_named) {                  // its name for a moment after a tap changed it
-        const char *name = radio_indicator_name(r->indicator);
-        gfx_fill(cv, ix, iy, micro_width(name, SC) + 8, MICRO_H * SC + 6, t->panel, 220);
-        micro_text(cv, ix + 4, iy + 3, name, t->focus, 256, SC);
-    }
     // the golden section's line: a hairline fading out at both ends
     int dx = cx - MID_PAD / 2 - 1;
     for (int yy = imax(cv->y0, iy); yy < imin(cv->y0 + cv->h, iy + ih); yy++) {
@@ -665,47 +631,163 @@ static void draw_mid(canvas_t *cv, const radio_t *r, const rtheme_t *t, const ra
     draw_clock(cv, r, t, cx, iy, cw, ih);
 }
 
-static void draw_foot(canvas_t *cv, const radio_t *r, const rtheme_t *t, const radio_layout_t *l)
+/* ---- the controls: big buttons, a tap on the player opens them ---- */
+
+typedef struct {
+    int x, y, w, h;
+} box_t;
+
+// four rows: the station (the list) with the numbers and the settings beside it; previous, play or
+// stop, next; the volume; the DAC's level, when the board has that knob (else the volume takes both)
+typedef struct {
+    box_t list, info, gear;
+    box_t prev, play, next;
+    box_t vol, vol_down, vol_up;
+    box_t lvl, lvl_down, lvl_up;
+} ctl_t;
+
+static int in_box(const box_t *b, int x, int y)
 {
-    if (!gfx_touches(cv, l->foot_y - 1, l->foot_y + l->foot_h + 3)) {
-        return;
-    }
-    foot_t f;
-    foot_geometry(l, &f);
-    panel(cv, f.x, f.y, f.w, f.h, t->panel, t->glass);
+    return x >= b->x && x < b->x + b->w && y >= b->y && y < b->y + b->h;
+}
 
-    // the volume: the bar takes a tap where the volume should go
-    char v[8];
-    snprintf(v, sizeof v, "%d", r->volume);
-    micro_text(cv, f.lx, f.ly, "VOL", t->quiet, 256, SC);
-    segments(cv, t, f.bx, f.ly, f.bw, f.bh, r->volume_max > 0 ? r->volume_max : 21, r->volume);
-    font_text(cv, F_SMALL, f.bx + f.bw + 6, f.ly - (F_SMALL->ascent - MICRO_H * SC) - 1, v, t->focus, 256);
+static void knob_row(int y, int h, box_t *mid, box_t *down, box_t *up)
+{
+    int bw = h * 13 / 10;                  // the minus and the plus: a little wider than tall
+    *down = (box_t){ M, y, bw, h };
+    *up = (box_t){ W - M - bw, y, bw, h };
+    *mid = (box_t){ M + bw + M, y, W - 2 * (M + bw + M), h };
+}
 
-    // the buffer: how far ahead of the speaker the stream is, lighter towards its edge
-    micro_text(cv, f.lx, f.by, "BUF", t->quiet, 256, SC);
-    int pct = imax(0, imin(100, r->buffer_pct));
-    int bh = f.bh - 2 * SC;
-    gfx_fill(cv, f.bx, f.by + 1, f.bw, bh, t->glass, 170);
-    int fill = f.bw * pct / 100;
-    uint32_t hi = pct < 20 ? t->low : t->prim;
-    for (int xx = 0; xx < fill; xx++) {
-        gfx_fill(cv, f.bx + xx, f.by + 1, 1, bh, gfx_mix(t->quiet, hi, (uint32_t)(80 + xx * 176 / imax(1, fill))), 256);
+static void ctl_geometry(const radio_t *r, ctl_t *c)
+{
+    int top = BIG ? 58 : 44, knob = BIG ? 64 : 50;
+    int knobs = r->dac_level > 0 ? 2 : 1;
+    int mid = H - (3 + knobs) * M - top - knobs * knob;
+    if (knobs == 1) {                      // no level: the play row and the volume share its room
+        mid -= (BIG ? 10 : 8);
+        knob += BIG ? 10 : 8;
     }
-    if (fill > 0) {
-        gfx_glow(cv, (float)(f.bx + fill), f.by + 1 + bh / 2.0f, bh * 1.2f, hi, 90);
-    }
-
-    // WiFi and the address, left of the gear
-    char db[12];
-    if (r->rssi != 0) {
-        snprintf(db, sizeof db, "%d", r->rssi);
+    int y = M;
+    c->gear = (box_t){ W - M - top, y, top, top };
+    c->info = (box_t){ c->gear.x - M - top, y, top, top };
+    c->list = (box_t){ M, y, c->info.x - M - M, top };
+    y += top + M;
+    int side = (W - 4 * M) * 28 / 100;
+    c->prev = (box_t){ M, y, side, mid };
+    c->next = (box_t){ W - M - side, y, side, mid };
+    c->play = (box_t){ M + side + M, y, W - 2 * (M + side + M), mid };
+    y += mid + M;
+    knob_row(y, knob, &c->vol, &c->vol_down, &c->vol_up);
+    y += knob + M;
+    if (knobs == 2) {
+        knob_row(y, knob, &c->lvl, &c->lvl_down, &c->lvl_up);
     } else {
-        snprintf(db, sizeof db, "--");
+        c->lvl = c->lvl_down = c->lvl_up = (box_t){ 0, 0, 0, 0 };
     }
-    text_right(cv, F_SMALL, f.rx, f.ly - 2, db, t->focus);
-    wifi_bars(cv, f.rx - font_width(F_SMALL, db) - 22, f.ly - 1, BIG ? 14 : 10, r->rssi, t);
-    text_right(cv, F_SMALL, f.rx, f.by - 2, r->ip[0] ? r->ip : "no address", t->dim);
-    gear(cv, f.gx, f.gy, GEAR_R, t->quiet, t->panel);
+}
+
+static void key(canvas_t *cv, const rtheme_t *t, const box_t *b)
+{
+    panel(cv, b->x, b->y, b->w, b->h, t->panel, t->glass);
+}
+
+// two triangles and a bar: |<< or >>|
+static void skip_sign(canvas_t *cv, const box_t *b, int dir, uint32_t c)
+{
+    float s = (float)imin(b->w, b->h) * 0.2f;
+    float cx = b->x + b->w / 2.0f, cy = b->y + b->h / 2.0f;
+    for (int k = 0; k < 2; k++) {
+        float tip = cx + dir * (k == 0 ? 0.0f : s);
+        float back = tip - dir * s;
+        gfx_tri(cv, back, cy - s, back, cy + s, tip, cy, c, 256);
+    }
+    float bar = cx + dir * (s + 1.5f);
+    gfx_line(cv, bar, cy - s, bar, cy + s, BIG ? 3.0f : 2.5f, c, 256);
+}
+
+// - or +
+static void sign(canvas_t *cv, const box_t *b, int plus, uint32_t c)
+{
+    float s = (float)imin(b->w, b->h) * 0.22f, wd = BIG ? 4.0f : 3.0f;
+    float cx = b->x + b->w / 2.0f, cy = b->y + b->h / 2.0f;
+    gfx_line(cv, cx - s, cy, cx + s, cy, wd, c, 256);
+    if (plus) {
+        gfx_line(cv, cx, cy - s, cx, cy + s, wd, c, 256);
+    }
+}
+
+// the volume or the level: its name small, its value big, a bar of segments under them
+static void knob_face(canvas_t *cv, const rtheme_t *t, const box_t *b, const char *name, const char *value, int n, int on)
+{
+    key(cv, t, b);
+    int pad = BIG ? 10 : 7;
+    micro_text(cv, b->x + pad, b->y + pad, name, t->quiet, 256, SC);
+    const font_t *f = F_TEXT;
+    text_right(cv, f, b->x + b->w - pad, b->y + pad - 3, value, t->focus);
+    int bh = BIG ? 12 : 9;
+    segments(cv, t, b->x + pad, b->y + b->h - pad - bh, b->w - 2 * pad, bh, n, on);
+}
+
+static void draw_controls(canvas_t *cv, const radio_t *r, const rtheme_t *t)
+{
+    ctl_t c;
+    ctl_geometry(r, &c);
+
+    // the station: the list's sign, its number, its name
+    key(cv, t, &c.list);
+    int lx = c.list.x + (BIG ? 12 : 9), ly = c.list.y + c.list.h / 2;
+    for (int i = -1; i <= 1; i++) {
+        gfx_fill(cv, lx, ly + i * (BIG ? 7 : 5) - 1, BIG ? 16 : 12, 2, t->prim, 256);
+    }
+    int nx = lx + (BIG ? 26 : 19);
+    if (r->station_no > 0) {
+        char no[8];
+        snprintf(no, sizeof no, "%02d", r->station_no % 100);
+        nx += font_text(cv, F_TEXT, nx, ly - F_TEXT->line_h / 2, no, t->prim, 256) + 6;
+    }
+    font_text_clip(cv, F_TEXT, nx, ly - F_TEXT->line_h / 2, r->station[0] ? r->station : "-", t->focus, 256,
+                   c.list.x + c.list.w - 8 - nx);
+
+    // the stream's numbers, behind the WiFi's bars; the settings, behind the gear
+    key(cv, t, &c.info);
+    int bh = BIG ? 24 : 18;
+    wifi_bars(cv, c.info.x + (c.info.w - 15) / 2, c.info.y + (c.info.h - bh) / 2, bh, r->rssi, t);
+    key(cv, t, &c.gear);
+    gear(cv, c.gear.x + c.gear.w / 2.0f, c.gear.y + c.gear.h / 2.0f, GEAR_R * 1.25f, t->quiet, t->panel);
+
+    // previous, play or stop, next
+    key(cv, t, &c.prev);
+    skip_sign(cv, &c.prev, -1, t->focus);
+    key(cv, t, &c.next);
+    skip_sign(cv, &c.next, 1, t->focus);
+    key(cv, t, &c.play);
+    float pcx = c.play.x + c.play.w / 2.0f, pcy = c.play.y + c.play.h / 2.0f;
+    float ps = c.play.h * 0.26f;
+    gfx_glow(cv, pcx, pcy, ps * 2.4f, t->prim, 50);
+    if (r->playing) {                      // playing or connecting: stop
+        gfx_fill(cv, (int)(pcx - ps * 0.85f), (int)(pcy - ps * 0.85f), (int)(ps * 1.7f), (int)(ps * 1.7f), t->prim, 256);
+    } else {
+        gfx_tri(cv, pcx - ps * 0.7f, pcy - ps, pcx - ps * 0.7f, pcy + ps, pcx + ps * 1.0f, pcy, t->prim, 256);
+    }
+
+    // the volume, and the level
+    char v[16];
+    int vmax = r->volume_max > 0 ? r->volume_max : 21;
+    snprintf(v, sizeof v, "%d", r->volume);
+    knob_face(cv, t, &c.vol, "VOLUME", v, vmax, r->volume);
+    key(cv, t, &c.vol_down);
+    sign(cv, &c.vol_down, 0, t->focus);
+    key(cv, t, &c.vol_up);
+    sign(cv, &c.vol_up, 1, t->focus);
+    if (r->dac_level > 0) {
+        snprintf(v, sizeof v, "%d%%", r->dac_level);
+        knob_face(cv, t, &c.lvl, "LEVEL", v, 20, (r->dac_level + 2) / 5);
+        key(cv, t, &c.lvl_down);
+        sign(cv, &c.lvl_down, 0, t->focus);
+        key(cv, t, &c.lvl_up);
+        sign(cv, &c.lvl_up, 1, t->focus);
+    }
 }
 
 /* ---- the lists: stations and settings ---- */
@@ -968,6 +1050,9 @@ void radio_draw(canvas_t *cv, const radio_t *r)
         case RADIO_CALIB:
             draw_calib(cv, r, t);
             break;
+        case RADIO_CONTROLS:
+            draw_controls(cv, r, t);
+            break;
         case RADIO_SETUP:
             draw_lines(cv, r, t, "WIFI SETUP");
             break;
@@ -981,7 +1066,6 @@ void radio_draw(canvas_t *cv, const radio_t *r)
             draw_head(cv, r, t, &l);
             draw_title(cv, r, t, &l);
             draw_mid(cv, r, t, &l);
-            draw_foot(cv, r, t, &l);
             break;
     }
     // a finger just went down: a ring spreading from it, fading
@@ -1020,12 +1104,8 @@ int radio_dirty(const radio_t *a, const radio_t *b)
             }
             if (a->volume_big != b->volume_big || (b->volume_big && a->volume != b->volume) || a->hh != b->hh ||
                 a->mm != b->mm || differ(a->date, b->date) || differ(a->weather, b->weather) || a->nbands != b->nbands ||
-                !SAME(bands) || !SAME(peaks) || !SAME(ghost) || a->indicator != b->indicator || a->indicator_named != b->indicator_named) {
+                !SAME(bands) || !SAME(peaks) || !SAME(ghost) || a->indicator != b->indicator) {
                 d |= RADIO_MID;
-            }
-            if (a->volume != b->volume || a->volume_max != b->volume_max || a->buffer_pct != b->buffer_pct ||
-                a->rssi != b->rssi || differ(a->ip, b->ip)) {
-                d |= RADIO_FOOT;
             }
             return d;
         }
@@ -1043,6 +1123,10 @@ int radio_dirty(const radio_t *a, const radio_t *b)
                     !SAME(traffic)) ? RADIO_ALL : 0;
         case RADIO_CALIB:
             return (a->calib_step != b->calib_step || a->calib_left_s != b->calib_left_s) ? RADIO_ALL : 0;
+        case RADIO_CONTROLS:
+            return (differ(a->station, b->station) || a->station_no != b->station_no || a->playing != b->playing ||
+                    a->volume != b->volume || a->volume_max != b->volume_max || a->dac_level != b->dac_level ||
+                    a->rssi != b->rssi) ? RADIO_ALL : 0;
         case RADIO_BLANK:
             return 0;
         default:
@@ -1070,9 +1154,6 @@ int radio_moving(const radio_t *r)
         }
         if (yb >= l.mid_y && ya < l.mid_y + l.mid_h) {
             m |= RADIO_MID;
-        }
-        if (yb >= l.foot_y) {
-            m |= RADIO_FOOT;
         }
         return m | (radio_moving_only(r));
     }
@@ -1137,34 +1218,23 @@ int radio_hit(const radio_t *r, int x, int y, int *arg)
     radio_layout_t l;
     radio_layout(&l);
     switch (r->screen) {
-        case RADIO_PLAYER: {
-            if (y < l.head_y + l.head_h) {
-                return x >= W - M - STATE_HIT ? RADIO_HIT_PLAYSTOP : RADIO_HIT_STATION;
-            }
-            if (y < l.title_y + l.title_h) {
-                return RADIO_HIT_TITLE;
-            }
-            if (y < l.mid_y + l.mid_h) {
-                if (r->volume_big) {
-                    return RADIO_HIT_NONE;
+        case RADIO_PLAYER:
+            return RADIO_HIT_CONTROLS;            // no aiming on the player: any tap opens the big buttons
+        case RADIO_CONTROLS: {
+            ctl_t c;
+            ctl_geometry(r, &c);
+            const struct { const box_t *b; int hit; } keys[] = {
+                { &c.list, RADIO_HIT_STATION }, { &c.info, RADIO_HIT_STATS }, { &c.gear, RADIO_HIT_SETTINGS },
+                { &c.prev, RADIO_HIT_PREV }, { &c.play, RADIO_HIT_PLAYSTOP }, { &c.next, RADIO_HIT_NEXT },
+                { &c.vol_down, RADIO_HIT_VOL_DOWN }, { &c.vol_up, RADIO_HIT_VOL_UP },
+                { &c.lvl_down, RADIO_HIT_LEVEL_DOWN }, { &c.lvl_up, RADIO_HIT_LEVEL_UP },
+            };
+            for (size_t i = 0; i < sizeof keys / sizeof keys[0]; i++) {
+                if (in_box(keys[i].b, x, y)) {
+                    return keys[i].hit;
                 }
-                int ix, iy, iw, ih, cx, cw;
-                mid_boxes(&l, &ix, &iy, &iw, &ih, &cx, &cw);
-                return x < cx - MID_PAD / 2 ? RADIO_HIT_INDICATOR : RADIO_HIT_CLOCK;
             }
-            foot_t f;
-            foot_geometry(&l, &f);
-            if (x >= f.rx + 4) {
-                return RADIO_HIT_SETTINGS;
-            }
-            // the volume's row, its bar a little wider than drawn: a finger is not a pixel
-            if (y < (f.ly + f.by) / 2 + f.bh / 2 && x >= f.bx - 10 && x <= f.bx + f.bw + 10) {
-                int vmax = r->volume_max > 0 ? r->volume_max : 21;
-                int v = ((x - f.bx) * vmax + f.bw / 2) / f.bw;
-                *arg = imax(0, imin(vmax, v));
-                return RADIO_HIT_VOLUME;
-            }
-            return RADIO_HIT_TITLE;               // the buffer and the address: the numbers
+            return RADIO_HIT_NONE;                // the volume's and the level's faces: nothing
         }
         case RADIO_LIST:
         case RADIO_SETTINGS: {

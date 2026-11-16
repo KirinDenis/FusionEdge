@@ -51,15 +51,16 @@ DspCore dsp;
 #define LITE_QUEUE 20
 #define LITE_MOVE_MS 40                  // a scrolling text moves one step this often
 #define VIEW_IDLE_MS 20000               // a list, the numbers or the settings go back to the player
+#define CONTROLS_IDLE_MS 8000            // and the big buttons sooner: the player is what the screen is for
 #define CALIB_WAIT_MS 30000              // the calibration gives up when nobody touches it
-#define NAMED_MS 1500                    // the indicator's name, after a tap changed it
 #define VOLUME_BIG_MS 1500
+#define DAC_LEVEL_STEP 5                 // percent a tap on the level's minus or plus
 #define MS_AUTO_CLOSE_MS 5000
 #define SWIPE_PX 24                      // a finger moving this far is a swipe, not a tap
 #define RELEASE_MS 80                    // the XPT2046 drops out for a moment now and then: that is no lift
 
 // the screens of this board, over FusionEdge's modes
-enum View { V_PLAYER, V_LIST, V_STATS, V_SETTINGS, V_CALIB };
+enum View { V_PLAYER, V_CONTROLS, V_LIST, V_STATS, V_SETTINGS, V_CALIB };
 enum { SET_THEME, SET_INDICATOR, SET_BRIGHTNESS, SET_SCREEN, SET_TOUCH, SET_VERSION, SET_ROWS };
 // the rows the settings show, top down: the touch row only where there is a calibration
 static const int SET_SHOWN[] = {SET_THEME, SET_INDICATOR, SET_BRIGHTNESS, SET_SCREEN,
@@ -88,12 +89,14 @@ static uint32_t  s_viewUntil = 0;
 static View      s_calibBack = V_PLAYER;
 static uint16_t  s_listFirst = 1;           // the station in the list's first row
 static uint32_t  s_volumeBigUntil = 0;
-static uint32_t  s_namedUntil = 0;
 
 // kept in NVS
 static Preferences s_prefs;
 static int         s_theme = 0;
 static int         s_indicator = RADIO_IND_LED;
+#ifdef AUDIO_INTERNAL_DAC
+static int         s_dacLevel = AUDIO_DAC_LEVEL; // the DAC's level, percent (Audio::setDacLevel)
+#endif
 
 // the touch: raw to screen, screen = (a b c; d e f) * (raw x, raw y, 1), at the rotation it was taken in
 struct TouchCal {
@@ -148,9 +151,13 @@ class BusGuard {
     bool _taken;
 };
 
+static uint32_t viewIdleMs(View v) {
+    return v == V_CONTROLS ? CONTROLS_IDLE_MS : VIEW_IDLE_MS;
+}
+
 static void setView(View v) {
     s_view = v;
-    s_viewUntil = millis() + VIEW_IDLE_MS;
+    s_viewUntil = millis() + viewIdleMs(v);
     s_redraw = RADIO_ALL;
 }
 
@@ -164,6 +171,10 @@ static void loadPrefs() {
     if (s_prefs.getBytesLength("cal") == sizeof(TouchCal)) {
         s_prefs.getBytes("cal", &s_cal, sizeof(TouchCal));
     }
+#ifdef AUDIO_INTERNAL_DAC
+    player.setDacLevel(s_prefs.getUChar("daclevel", AUDIO_DAC_LEVEL));
+    s_dacLevel = player.getDacLevel();
+#endif
     s_prefs.end();
 }
 
@@ -333,7 +344,18 @@ static void calibTouch() {
 static void userActivity() {
     config.screensaverTicks = 0;
     config.screensaverPlayingTicks = 0;
-    s_viewUntil = millis() + VIEW_IDLE_MS;
+    s_viewUntil = millis() + viewIdleMs(s_view);
+}
+
+// the DAC's level a step down or up, kept for the next start
+static void stepDacLevel(int dir) {
+#ifdef AUDIO_INTERNAL_DAC
+    player.setDacLevel((uint8_t)constrain(s_dacLevel + dir * DAC_LEVEL_STEP, 5, 100));
+    s_dacLevel = player.getDacLevel();
+    savePref("daclevel", (uint8_t)s_dacLevel);
+#else
+    (void)dir;
+#endif
 }
 
 static void showVolume() {
@@ -372,24 +394,20 @@ static void tap(Display& d, int x, int y) {
     int arg = 0;
     const int hit = radio_hit(&s_now, x, y, &arg);
     switch (hit) {
+        case RADIO_HIT_CONTROLS: setView(V_CONTROLS); break;
         case RADIO_HIT_STATION:
             s_listFirst = 0;                 // centred on the one playing (readList)
             setView(V_LIST);
             break;
-        case RADIO_HIT_PLAYSTOP: player.toggle(); break;
-        case RADIO_HIT_TITLE:
-        case RADIO_HIT_CLOCK: setView(V_STATS); break;
-        case RADIO_HIT_INDICATOR:
-            s_indicator = (s_indicator + 1) % RADIO_INDICATORS;
-            savePref("ind", (uint8_t)s_indicator);
-            s_namedUntil = millis() + NAMED_MS;
-            break;
-        case RADIO_HIT_VOLUME:
-            config.store.volume = (uint8_t)arg;
-            player.setVol((uint8_t)arg);
-            showVolume();
-            break;
+        case RADIO_HIT_STATS: setView(V_STATS); break;
         case RADIO_HIT_SETTINGS: setView(V_SETTINGS); break;
+        case RADIO_HIT_PREV: player.prev(); break;
+        case RADIO_HIT_PLAYSTOP: player.toggle(); break;
+        case RADIO_HIT_NEXT: player.next(); break;
+        case RADIO_HIT_VOL_DOWN: player.stepVol(false); break;
+        case RADIO_HIT_VOL_UP: player.stepVol(true); break;
+        case RADIO_HIT_LEVEL_DOWN: stepDacLevel(-1); break;
+        case RADIO_HIT_LEVEL_UP: stepDacLevel(1); break;
         case RADIO_HIT_BACK: setView(V_PLAYER); break;
         case RADIO_HIT_ROW:
             if (s_view == V_LIST && arg < s_now.list_rows) {
@@ -625,7 +643,9 @@ static void readPlayer(radio_t& r, displayMode_e mode) {
     r.rssi = s_rssi;
     strlcpy(r.ip, WiFi.localIP().toString().c_str(), sizeof r.ip);
     r.indicator = s_indicator;
-    r.indicator_named = now < s_namedUntil;
+#ifdef AUDIO_INTERNAL_DAC
+    r.dac_level = s_dacLevel;
+#endif
     r.nbands = LITE_BANDS;
     if (player.isRunning()) {
         uint8_t spec[SA_BANDS_MAX];
@@ -742,6 +762,10 @@ static void snapshot(radio_t& r, Display& d, uint8_t bootStep) {
             readPlayer(r, mode);
             r.screen = RADIO_STATS;
             return;
+        case V_CONTROLS:
+            readPlayer(r, mode);
+            r.screen = RADIO_CONTROLS;
+            return;
         default:
             readPlayer(r, mode);
             r.screen = RADIO_PLAYER;
@@ -805,9 +829,6 @@ static void drawParts(int parts) {
         }
         if (parts & RADIO_MID) {
             drawRows(l.mid_y, l.mid_y + l.mid_h);
-        }
-        if (parts & RADIO_FOOT) {
-            drawRows(l.foot_y, l.foot_y + l.foot_h);
         }
     }
     dsp.endWrite();

@@ -181,6 +181,15 @@ AsyncBasicResponse::AsyncBasicResponse(int code, const String& contentType, cons
 void AsyncBasicResponse::_respond(AsyncWebServerRequest *request){
   _state = RESPONSE_HEADERS;
   String out = _assembleHead(request->version());
+#if defined(BOARD_NO_PSRAM)
+  // FusionEdge: the headers and the content all go through _ack, which keeps what lwIP had no memory
+  // for until the next ack or poll (see AsyncAbstractResponse::_ack)
+  _content = out + _content;
+  _contentLength += out.length();
+  _state = RESPONSE_CONTENT;
+  _ack(request, 0, 0);
+  return;
+#endif
   size_t outLen = out.length();
   size_t space = request->client()->space();
   if(!_contentLength && space >= outLen){
@@ -215,6 +224,32 @@ void AsyncBasicResponse::_respond(AsyncWebServerRequest *request){
 size_t AsyncBasicResponse::_ack(AsyncWebServerRequest *request, size_t len, uint32_t time){
   (void)time;
   _ackedLength += len;
+#if defined(BOARD_NO_PSRAM)
+  if(_state == RESPONSE_CONTENT){
+    const size_t available = _contentLength - _sentLength;
+    const size_t space = request->client()->space();
+    const size_t n = space < available ? space : available;
+    const size_t put = n ? request->client()->add(_content.c_str(), n) : 0;
+    if (put == 0) {
+      return 0;   // lwIP took nothing: the next ack or poll tries again
+    }
+    request->client()->send();
+    _writtenLength += put;
+    _sentLength += put;
+    if (put == available) {
+      _content = String();
+      _state = RESPONSE_WAIT_ACK;
+    } else {
+      _content = _content.substring(put);
+    }
+    return put;
+  } else if(_state == RESPONSE_WAIT_ACK){
+    if(_ackedLength >= _writtenLength){
+      _state = RESPONSE_END;
+    }
+  }
+  return 0;
+#endif
   if(_state == RESPONSE_CONTENT){
     size_t available = _contentLength - _sentLength;
     size_t space = request->client()->space();
@@ -278,13 +313,40 @@ size_t AsyncAbstractResponse::_ack(AsyncWebServerRequest *request, size_t len, u
       space -= headLen;
     } else {
       String out = _head.substring(0, space);
+#if defined(BOARD_NO_PSRAM)
+      const size_t put = request->client()->add(out.c_str(), out.length());   // see the content's write below
+      if (put == 0) {
+        return 0;
+      }
+      request->client()->send();
+      _head = _head.substring(space);
+      _writtenLength += put;
+#else
       _head = _head.substring(space);
       _writtenLength += request->client()->write(out.c_str(), out.length());
+#endif
       return out.length();
     }
   }
 
   if(_state == RESPONSE_CONTENT){
+#if defined(BOARD_NO_PSRAM)
+    if (_pendingBuf) {   // what lwIP did not take last time goes first, as it was
+      if (space < _pendingLen || request->client()->add((const char*)_pendingBuf, _pendingLen) == 0) {
+        return 0;
+      }
+      request->client()->send();
+      const size_t sent = _pendingLen;
+      _writtenLength += sent;
+      _sentLength += _pendingSent;
+      free(_pendingBuf);
+      _pendingBuf = nullptr;
+      if (_pendingLast) {
+        _state = RESPONSE_WAIT_ACK;
+      }
+      return sent;
+    }
+#endif
     size_t outLen;
     if(_chunked){
       if(space <= 8){
@@ -296,10 +358,24 @@ size_t AsyncAbstractResponse::_ack(AsyncWebServerRequest *request, size_t len, u
     } else {
       outLen = ((_contentLength - _sentLength) > space)?space:(_contentLength - _sentLength);
     }
+#if defined(BOARD_NO_PSRAM) && defined(CONFIG_LWIP_TCP_MSS)
+    // FusionEdge: a board without PSRAM has about 22 KB left while a stream plays. A whole send buffer a
+    // time (5.7 KB malloc'd here, as much again in lwIP's queue) for each of the five files a browser asks
+    // for at once is more than that: the connections were reset and the radio's page did not open (the
+    // 2.8" E32R28T). Two segments a time are enough for the other side to answer at once
+    if (outLen > 2 * CONFIG_LWIP_TCP_MSS) {
+      outLen = 2 * CONFIG_LWIP_TCP_MSS;
+    }
+#endif
 
     uint8_t *buf = (uint8_t *)malloc(outLen+headLen);
     if (!buf) {
       // os_printf("_ack malloc %d failed\n", outLen+headLen);
+#if defined(BOARD_NO_PSRAM)
+      if (headLen) {
+        _state = RESPONSE_HEADERS;   // the headers are still to go: the next ack or poll starts with them
+      }
+#endif
       return 0;
     }
 
@@ -333,6 +409,30 @@ size_t AsyncAbstractResponse::_ack(AsyncWebServerRequest *request, size_t len, u
       outLen = readLen + headLen;
     }
 
+#if defined(BOARD_NO_PSRAM)
+    // FusionEdge: lwIP may have no memory for it (ERR_MEM). write() then says 0, and this went on as if it
+    // had gone: the headers dropped and the bytes counted as sent, a page that came broken or never (the
+    // 2.8" E32R28T while a stream played). What lwIP did not take is kept in this very buffer and goes
+    // first on the next ack or poll: nothing more is asked of the memory just when it has none
+    const size_t put = outLen ? request->client()->add((const char*)buf, outLen) : 0;
+    if (outLen && put == 0) {
+      _pendingBuf = buf;
+      _pendingLen = outLen;
+      _pendingSent = _chunked ? readLen : outLen - headLen;
+      _pendingLast = _chunked ? readLen == 0 : (_sendContentLength && _sentLength + _pendingSent == _contentLength);
+      if (headLen) {
+        _head = String();
+      }
+      return 0;
+    }
+    if (put) {
+      request->client()->send();   // when it cannot go now, lwIP sends what it took later
+    }
+    _writtenLength += put;
+    if(headLen){
+        _head = String();
+    }
+#else
     if(headLen){
         _head = String();
     }
@@ -340,6 +440,7 @@ size_t AsyncAbstractResponse::_ack(AsyncWebServerRequest *request, size_t len, u
     if(outLen){
         _writtenLength += request->client()->write((const char*)buf, outLen);
     }
+#endif
 
     if(_chunked){
         _sentLength += readLen;

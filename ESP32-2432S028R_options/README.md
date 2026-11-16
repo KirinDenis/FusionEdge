@@ -39,10 +39,16 @@ FusionEdge is written for boards with PSRAM. This board has none, so its
   HTTPS stream does not play either: its encryption leaves about 5 KB in one
   piece, too little for the MP3 decoder. A station that cannot play is
   retried, it does not restart the board. The LittleFS image holds only the web
-  pages and the boot logo (`data.txt`).
+  pages and the boot logo (`data.txt`). While a stream plays about 20 KB are
+  left, so the radio's own web page is served with care: its files one at a
+  time (`src/core/netserver.cpp`), two TCP segments at a time, and what lwIP
+  has no memory for is kept and sent on the next ack instead of being lost
+  (`src/AsyncWebServer/WebResponses.cpp`). The page opens; the sound can still
+  stop for a moment while it loads, and the radio starts the station again.
 - `AUDIO_INTERNAL_DAC`: the sound comes from the ESP32's own 8-bit DAC on GPIO
   26, the board's speaker socket, in mono (see "The sound" below).
-- `AUDIO_DAC_LEVEL=28`: the loudest sound takes 28% of the DAC's swing.
+- `AUDIO_DAC_LEVEL=28`: the loudest sound takes 28% of the DAC's swing at first;
+  the level's buttons on the screen change it.
 
 ## The sound
 
@@ -50,7 +56,8 @@ The ESP32's DAC has 8 bits, and the board's amplifier has more gain than they
 can fill: on the E32R28T it played clean to volume 10 of 21 and broke up on
 loud passages from 11. `AUDIO_DAC_LEVEL` scales the sound down for the board, so
 the top step, 21, now plays as 10 did. A board whose amplifier takes more sets
-a higher level in its `platformio.ini` (the 3.5" E32R35T has 70).
+a higher level in its `platformio.ini` (the 3.5" E32R35T has 70), and a speaker
+or a board that wants another can have it from the level's buttons.
 
 Inside `Audio::dacWrite` (`src/audioI2S/Audio.cpp`) the DAC runs at twice the
 stream's rate, with a point halfway between every two samples, which takes the
@@ -67,12 +74,16 @@ web page.
 
 ## The screen
 
-- The player: the station and its number, the song, the clock and the date, an
-  indicator of the sound, the volume, the stream's buffer and the WiFi signal.
-  Tap the station for the station list, the song or the clock for the stream's
-  numbers, the indicator to change it (bars, a scope, a radar), the volume to
-  set it, the gear for the settings. Swipe up or down for the volume, left or
-  right for the next or the previous station.
+- The player: the station and its number, the song, a sound indicator (bars, a
+  scope or a radar), the clock and the date. Nothing on it to aim at: a tap
+  anywhere opens the buttons. Swipe up or down for the volume, left or right
+  for the next or the previous station.
+- The buttons, big enough for a finger: the station (its list), the WiFi's bars
+  (the stream's numbers), the gear (the settings); previous, play or stop,
+  next; the volume and the DAC's level, each with a minus and a plus. The level
+  is how much of the DAC's swing the loudest sound takes, 5% a tap, kept in NVS;
+  `AUDIO_DAC_LEVEL` is where it starts. Untouched for 8 seconds, the buttons give
+  the screen back to the player.
 - The stream's numbers: codec, bitrate, sample rate, the data coming in and its
   last minute as a graph, reconnects, free memory and the WiFi network.
 - The settings: colour theme, indicator, brightness, flip the screen, calibrate

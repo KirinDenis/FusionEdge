@@ -40,7 +40,7 @@ constexpr size_t m_frameSizeAAC = 4608;
 constexpr size_t m_frameSizeFLAC = 4608;   // never used: no FLAC decoder here
 constexpr size_t m_frameSizeOPUS = 4608;   // never used: no Opus decoder here
 constexpr size_t m_frameSizeVORBIS = 4608; // never used: no Vorbis decoder here
-constexpr size_t m_outbuffSize = 4096;     // a frame of HE-AAC v2 is 2048 stereo samples, of MP3 1152
+constexpr size_t m_outbuffSize = 2304;     // an MP3 frame, 1152 stereo samples (no AAC here; WAV is cut to it)
 constexpr size_t m_resamplesBuffSize = 16; // no resampler without PSRAM
 #else
 constexpr size_t m_frameSizeWav = 4096;
@@ -6096,18 +6096,8 @@ void Audio::dacClose() {
     m_dac_rate = 0;
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
-// AUDIO_DAC_LEVEL: how much of the DAC's swing the loudest sound takes, in percent, for a board whose
-// speaker amplifier clips before the DAC's full swing (a build flag in the board's platformio.ini).
-// The 3.5" E32R35T plays clean at full swing, volume step 19 of 21. The 2.8" E32R28T has the same
-// FM8002E amplifier with about 10 dB more gain: it played clean to step 10 (-12 dB) and strained at 11
-// (-10 dB), so it takes 28 (-11 dB) and its top step (-1 dB on the stock curve) plays at -12 dB
-#ifndef AUDIO_DAC_LEVEL
-#    define AUDIO_DAC_LEVEL 100
-#endif
-constexpr int64_t DAC_LEVEL = (int64_t)AUDIO_DAC_LEVEL * 65536 / 100;
-// —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 // count stereo frames of 32-bit samples in, two unsigned bytes each out, at twice the stream's rate:
-// the mean of the two channels at AUDIO_DAC_LEVEL, and before it the point halfway from the frame
+// the mean of the two channels at the DAC's level (setDacLevel), and before it the point halfway from the frame
 // before, each one made 8 bits by dacQuantize. An 8-bit DAC at the stream's own rate also sends the
 // music's mirror images above half that rate (a cat took notice of them on the 2.8" E32R28T): the
 // halfway points take those near the rate down by 20 dB and more, and what is left lies above 66 kHz.
@@ -6125,14 +6115,15 @@ esp_err_t Audio::dacWrite(const int32_t* frames, int32_t count, size_t* bytesCon
     if (count <= 0) return ESP_OK;
     const int32_t room = (int32_t)(m_outbuffSize / 2); // frames in a chunk at most
     if (count > room) count = room;
-    uint8_t*  out = m_dac_buff.get();
-    esp_err_t err = ESP_OK;
+    uint8_t*      out = m_dac_buff.get();
+    const int64_t level = (int64_t)m_dac_level * 65536 / 100; // out of 65536
+    esp_err_t     err = ESP_OK;
     for (int32_t first = 0; first < count && err == ESP_OK; first += room / 2) {
         const int32_t last = std::min(count, first + room / 2); // m_dac_buff holds half a chunk
         size_t        n = 0;
         for (int32_t i = first; i < last; i++) {
             const int64_t sum = (int64_t)frames[i * 2] + frames[i * 2 + 1];
-            const int32_t mono = (int32_t)((sum * DAC_LEVEL) >> 17); // the channels' mean, at AUDIO_DAC_LEVEL
+            const int32_t mono = (int32_t)((sum * level) >> 17);     // the channels' mean, at the level
             const int32_t half = (m_dac_last >> 1) + (mono >> 1);    // halfway from the frame before
             m_dac_last = mono;
             const uint8_t sentFirst = dacQuantize(half);             // quantized in the order they play:

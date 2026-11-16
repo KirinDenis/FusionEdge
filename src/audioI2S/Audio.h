@@ -24,6 +24,14 @@
 #include <driver/i2s_std.h>
 #ifdef AUDIO_INTERNAL_DAC
 #include <driver/dac_continuous.h>
+// AUDIO_DAC_LEVEL: how much of the DAC's swing the loudest sound takes at first, in percent, for a
+// board whose speaker amplifier clips before the DAC's full swing (a build flag in the board's
+// platformio.ini); setDacLevel changes it while it plays. The 3.5" E32R35T broke up on loud passages
+// at volume step 19 of 21 at full swing, and plays clean at 70. The 2.8" E32R28T has the same FM8002E
+// amplifier with about 10 dB more gain: clean to step 10 (-12 dB), straining at 11, so 28 (-11 dB)
+#ifndef AUDIO_DAC_LEVEL
+#define AUDIO_DAC_LEVEL 100
+#endif
 #endif
 #include <esp32-hal-log.h>
 #include <functional>
@@ -170,6 +178,9 @@ class Audio {
 #ifdef AUDIO_INTERNAL_DAC
     // no I2S chip: the classic ESP32's own 8-bit DAC on GPIO 25 or 26 plays, in mono (setPinout's place)
     bool             setPinoutDAC(uint8_t DOUT);
+    // the part of the DAC's swing the loudest sound takes, in percent, 5..100 (AUDIO_DAC_LEVEL at first)
+    void             setDacLevel(uint8_t percent) { m_dac_level = percent < 5 ? 5 : (percent > 100 ? 100 : percent); }
+    uint8_t          getDacLevel() const { return m_dac_level; }
 #endif
     bool             pauseResume();
     bool             isRunning() { return m_f_running; }
@@ -440,6 +451,7 @@ class Audio {
     int32_t                 m_dac_err1 = 0; // the last sample's 8-bit rounding error, fed into the next ones (dacQuantize)
     int32_t                 m_dac_err2 = 0; // and the one before it
     uint32_t                m_dac_rand = 1; // the dither's random numbers, xorshift32
+    volatile uint8_t        m_dac_level = AUDIO_DAC_LEVEL; // percent of the swing (setDacLevel), read by the audio task
     bool                    dacOpen(uint32_t rate);
     void                    dacClose();
     esp_err_t               dacWrite(const int32_t* frames, int32_t count, size_t* bytesConsumed);
